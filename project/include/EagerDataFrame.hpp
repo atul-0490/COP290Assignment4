@@ -32,6 +32,11 @@ public:
     EagerDataFrame select(const std::vector<std::string>& columns) const;
     EagerDataFrame select(const std::vector<ExprBuilder>& exprs) const;
 
+    /// Initializer-list overload so users can write `df.select({"a","b"})`
+    /// unambiguously without the compiler wavering between the string and
+    /// ExprBuilder vectors.
+    EagerDataFrame select(std::initializer_list<const char*> columns) const;
+
     // --- Row operations ---
     EagerDataFrame filter(const ExprBuilder& predicate) const;
     EagerDataFrame with_column(const std::string& name,
@@ -58,6 +63,11 @@ public:
 
 private:
     std::shared_ptr<arrow::Table> table_;
+
+    /// When non-empty, marks this frame as "grouped" — `aggregate()` will
+    /// bucket rows by these key columns before applying each aggregation.
+    /// `group_by()` returns a new EagerDataFrame with this set.
+    std::vector<std::string> group_keys_;
 
     /// Evaluate a scalar / array-producing expression against this frame.
     /// Returns a ChunkedArray with one entry per row of the underlying table.

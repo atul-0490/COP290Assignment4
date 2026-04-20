@@ -1,0 +1,28 @@
+Start testing: Apr 19 15:21 UTC
+----------------------------------------------------------
+1/1 Testing: smoke
+1/1 Test: smoke
+Command: "/home/atulk/asm/COP290/COP290Assignment4/project/build/tests/test_main"
+Directory: /home/atulk/asm/COP290/COP290Assignment4/project/build/tests
+"smoke" start time: Apr 19 15:21 UTC
+Output:
+----------------------------------------------------------
+test1_csv_roundtrip ... OK
+test2_filter ........... OK
+test3_select_with_expr . OK
+test4_group_aggregate .. OK
+test5_sort_desc ........ OK
+test6_join_inner ....... OK
+test7_null_propagation . OK
+test8_type_error ....... OK
+test9_strings_and_agg .. OK
+ALL TESTS PASSED
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"smoke" end time: Apr 19 15:21 UTC
+"smoke" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Apr 19 15:21 UTC

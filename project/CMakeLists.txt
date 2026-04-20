@@ -19,6 +19,10 @@ endif()
 option(DFL_REQUIRE_PARQUET "Require Parquet support (assignment default)" ON)
 
 find_package(Arrow REQUIRED)
+# ArrowCompute holds the scalar/aggregate compute kernels (add, filter, sort,
+# ...) on Debian/Ubuntu's Arrow packaging. The Arrow library itself ships
+# without kernels registered; linking libarrow_compute pulls them in.
+find_package(ArrowCompute QUIET)
 
 if(DFL_REQUIRE_PARQUET)
     find_package(Parquet QUIET)
@@ -82,6 +86,12 @@ if(TARGET Arrow::arrow_static)
     target_link_libraries(dataframelib PUBLIC Arrow::arrow_static)
 else()
     target_link_libraries(dataframelib PUBLIC Arrow::arrow_shared)
+endif()
+
+if(TARGET ArrowCompute::arrow_compute_static)
+    target_link_libraries(dataframelib PUBLIC ArrowCompute::arrow_compute_static)
+elseif(TARGET ArrowCompute::arrow_compute_shared)
+    target_link_libraries(dataframelib PUBLIC ArrowCompute::arrow_compute_shared)
 endif()
 
 if(TARGET Parquet::parquet_static)

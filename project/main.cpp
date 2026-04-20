@@ -50,12 +50,15 @@ int main() {
     auto table = makeDemoTable();
     EagerDataFrame df(table);
 
+    std::cout << "-- full frame --\n";
     df.print();
 
-    // Prove that the expression DSL compiles and chains.
-    auto predicate = col("id") > lit<int32_t>(2);
-    (void)predicate;
+    std::cout << "\n-- filter id > 2, then add double_score column --\n";
+    auto out = df.filter(col("id") > lit<int32_t>(2))
+                 .with_column("double_score", col("score") * lit<double>(2.0))
+                 .select({"id", "name", "score", "double_score"});
+    out.print();
 
-    std::cout << "Build OK\n";
+    std::cout << "\nBuild OK\n";
     return 0;
 }

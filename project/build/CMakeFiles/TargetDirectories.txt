@@ -1,0 +1,9 @@
+/home/atulk/asm/COP290/COP290Assignment4/project/build/CMakeFiles/dataframelib.dir
+/home/atulk/asm/COP290/COP290Assignment4/project/build/CMakeFiles/main.dir
+/home/atulk/asm/COP290/COP290Assignment4/project/build/CMakeFiles/test.dir
+/home/atulk/asm/COP290/COP290Assignment4/project/build/CMakeFiles/edit_cache.dir
+/home/atulk/asm/COP290/COP290Assignment4/project/build/CMakeFiles/rebuild_cache.dir
+/home/atulk/asm/COP290/COP290Assignment4/project/build/tests/CMakeFiles/test_main.dir
+/home/atulk/asm/COP290/COP290Assignment4/project/build/tests/CMakeFiles/test.dir
+/home/atulk/asm/COP290/COP290Assignment4/project/build/tests/CMakeFiles/edit_cache.dir
+/home/atulk/asm/COP290/COP290Assignment4/project/build/tests/CMakeFiles/rebuild_cache.dir

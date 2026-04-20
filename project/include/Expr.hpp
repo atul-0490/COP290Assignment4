@@ -183,22 +183,33 @@ ExprBuilder lit(T value);
 // ---------------------------------------------------------------------------
 
 template <typename T>
-std::shared_ptr<Expr> makeLit(T /*value*/) {
-    // Stub: we only set the logical type in step 1. The concrete scalar
-    // encoding inside `value` is wired up when the evaluator lands.
+std::shared_ptr<Expr> makeLit(T value) {
     auto node = std::make_shared<LitExpr>();
-    if constexpr (std::is_same_v<T, int32_t>) {
-        node->type = ColType::INT32;
-    } else if constexpr (std::is_same_v<T, int64_t> || std::is_same_v<T, int>) {
-        node->type = ColType::INT64;
+    if constexpr (std::is_same_v<T, bool>) {
+        node->type  = ColType::BOOLEAN;
+        node->value = arrow::Datum(std::make_shared<arrow::BooleanScalar>(value));
+    } else if constexpr (std::is_same_v<T, int32_t>) {
+        node->type  = ColType::INT32;
+        node->value = arrow::Datum(std::make_shared<arrow::Int32Scalar>(value));
+    } else if constexpr (std::is_same_v<T, int64_t>) {
+        node->type  = ColType::INT64;
+        node->value = arrow::Datum(std::make_shared<arrow::Int64Scalar>(value));
+    } else if constexpr (std::is_integral_v<T>) {
+        // Fallback for `int`, `unsigned`, `long`, etc. — treat as int64.
+        node->type  = ColType::INT64;
+        node->value = arrow::Datum(std::make_shared<arrow::Int64Scalar>(
+            static_cast<int64_t>(value)));
     } else if constexpr (std::is_same_v<T, float>) {
-        node->type = ColType::FLOAT32;
+        node->type  = ColType::FLOAT32;
+        node->value = arrow::Datum(std::make_shared<arrow::FloatScalar>(value));
     } else if constexpr (std::is_same_v<T, double>) {
-        node->type = ColType::FLOAT64;
-    } else if constexpr (std::is_same_v<T, bool>) {
-        node->type = ColType::BOOLEAN;
+        node->type  = ColType::FLOAT64;
+        node->value = arrow::Datum(std::make_shared<arrow::DoubleScalar>(value));
     } else {
-        node->type = ColType::STRING;
+        // std::string, const char*, char[] — all route through string(...).
+        node->type  = ColType::STRING;
+        node->value = arrow::Datum(
+            std::make_shared<arrow::StringScalar>(std::string(value)));
     }
     return node;
 }
