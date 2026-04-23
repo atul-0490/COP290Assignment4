@@ -104,6 +104,15 @@ std::vector<int32_t> asI32(const std::shared_ptr<arrow::ChunkedArray>& c) {
     return out;
 }
 
+std::vector<int64_t> asI64(const std::shared_ptr<arrow::ChunkedArray>& c) {
+    std::vector<int64_t> out;
+    for (int ci = 0; ci < c->num_chunks(); ++ci) {
+        auto arr = std::static_pointer_cast<arrow::Int64Array>(c->chunk(ci));
+        for (int64_t i = 0; i < arr->length(); ++i) out.push_back(arr->Value(i));
+    }
+    return out;
+}
+
 std::vector<double> asF64(const std::shared_ptr<arrow::ChunkedArray>& c) {
     std::vector<double> out;
     for (int ci = 0; ci < c->num_chunks(); ++ci) {
@@ -611,6 +620,239 @@ void test20_optimizer_benchmark() {
     std::cout << "OK\n";
 }
 
+// ---------------------------------------------------------------------------
+// Edge-case tests (Step 5).
+// ---------------------------------------------------------------------------
+
+void test21_empty_dataframe() {
+    std::cout << "test21_empty_dataframe . ";
+    // An EagerDataFrame with 0 rows but a defined schema.
+    arrow::Int32Builder ib;
+    std::shared_ptr<arrow::Array> a;
+    [[maybe_unused]] auto st = ib.Finish(&a);
+    arrow::StringBuilder sb;
+    std::shared_ptr<arrow::Array> s;
+    st = sb.Finish(&s);
+
+    auto df = makeFrame({{"n", a}, {"name", s}});
+    assert(df.numRows() == 0);
+
+    auto f = df.filter(col("n") > lit<int32_t>(0));
+    assert(f.numRows() == 0);
+
+    auto sel = df.select({"n"});
+    assert(sel.numRows() == 0);
+    assert(sel.columnNames() == (std::vector<std::string>{"n"}));
+
+    auto so = df.sort({"n"}, true);
+    assert(so.numRows() == 0);
+    std::cout << "OK\n";
+}
+
+void test22_single_row_group_by() {
+    std::cout << "test22_single_row_group  ";
+    auto df = makeFrame({
+        {"dept",   str({"eng"})},
+        {"salary", f64({100.0})},
+    });
+    auto out = df.group_by({"dept"})
+                 .aggregate({{"total", col("salary").sum()}});
+    assert(out.numRows() == 1);
+    assert(std::abs(asF64(column(out, "total"))[0] - 100.0) < 1e-9);
+    std::cout << "OK\n";
+}
+
+void test23_all_null_column() {
+    std::cout << "test23_all_null_column . ";
+    auto df = makeFrame({
+        {"x", i32_with_nulls({0, 0, 0, 0}, {false, false, false, false})},
+    });
+    // sum() on an all-null column is null (Arrow semantics).
+    auto agg = df.aggregate({{"s", col("x").sum()}});
+    auto sum_col = column(agg, "s");
+    auto chunk0  = sum_col->chunk(0);
+    assert(chunk0->length() == 1);
+    assert(chunk0->IsNull(0));
+
+    // filter(is_null) must keep every row.
+    auto all = df.filter(col("x").is_null());
+    assert(all.numRows() == 4);
+    std::cout << "OK\n";
+}
+
+void test24_large_string_column() {
+    std::cout << "test24_large_strings ... ";
+    const int N = 10000;
+    std::vector<std::string> v;
+    v.reserve(N);
+    for (int i = 0; i < N; ++i) {
+        // 1 in 3 rows contains '@', others don't, so we can validate
+        // contains() counts correctly.
+        v.push_back(i % 3 == 0 ? "user" + std::to_string(i) + "@host"
+                                : "user" + std::to_string(i));
+    }
+    auto df = makeFrame({{"email", str(v)}});
+
+    auto has = df.with_column("hasAt", col("email").contains("@"))
+                 .aggregate({{"n", col("hasAt").sum()}});
+    // contains() returns int32 match-count; sum is the number of rows with
+    // at least one '@'. Exactly ceil(N/3) rows include an '@'.
+    int64_t expected = 0;
+    for (int i = 0; i < N; ++i) if (i % 3 == 0) ++expected;
+    auto arr = has.table()->GetColumnByName("n")->chunk(0);
+    // sum() of int32 → int64 in Arrow.
+    auto sum_arr = std::static_pointer_cast<arrow::Int64Array>(arr);
+    assert(sum_arr->Value(0) == expected);
+
+    // to_upper() must work over 10k rows.
+    auto up = df.select({ col("email").to_upper().alias("E") });
+    assert(up.numRows() == N);
+    auto e = std::static_pointer_cast<arrow::StringArray>(
+        column(up, "E")->chunk(0));
+    assert(e->GetString(0).find("USER") != std::string::npos);
+    std::cout << "OK\n";
+}
+
+void test25_chained_filters() {
+    std::cout << "test25_chained_filters . ";
+    auto df = makeFrame({
+        {"x", i32({1, 2, 3, 4, 5, 6, 7, 8, 9, 10})},
+    });
+    auto a = df.filter(col("x") > lit<int32_t>(2))
+               .filter(col("x") < lit<int32_t>(9))
+               .filter(col("x") != lit<int32_t>(5));
+    auto b = df.filter((col("x") > lit<int32_t>(2)) &
+                       (col("x") < lit<int32_t>(9)) &
+                       (col("x") != lit<int32_t>(5)));
+    assert(a.numRows() == b.numRows());
+    assert(asI32(column(a, "x")) == asI32(column(b, "x")));
+    // Expected: {3,4,6,7,8}
+    assert((asI32(column(a, "x")) == std::vector<int32_t>{3, 4, 6, 7, 8}));
+    std::cout << "OK\n";
+}
+
+void test26_multi_key_join() {
+    std::cout << "test26_multi_key_join .. ";
+    auto left = makeFrame({
+        {"dept", str({"eng", "eng", "hr",  "hr"})},
+        {"year", i64({2023,  2024,  2023,  2024})},
+        {"val",  i64({10,    20,    30,    40})},
+    });
+    auto right = makeFrame({
+        {"dept",  str({"eng", "hr",  "hr"})},
+        {"year",  i64({2024,  2023,  2024})},
+        {"bonus", i64({100,   200,   300})},
+    });
+    auto out = left.join(right, {"dept", "year"}, "inner");
+    assert(out.numRows() == 3);
+    auto v = asI64(column(out, "val"));
+    auto b = asI64(column(out, "bonus"));
+    // Pairs matched: (eng,2024,20,100), (hr,2023,30,200), (hr,2024,40,300)
+    int64_t sumV = 0, sumB = 0;
+    for (auto x : v) sumV += x;
+    for (auto x : b) sumB += x;
+    assert(sumV == 20 + 30 + 40);
+    assert(sumB == 100 + 200 + 300);
+    std::cout << "OK\n";
+}
+
+void test27_eight_op_lazy_plan() {
+    std::cout << "test27_eight_op_lazy ... ";
+    const std::string path = "/tmp/dfl_test27.csv";
+    {
+        std::ofstream f(path);
+        f << "dept,year,val\n";
+        for (int i = 0; i < 50; ++i) {
+            const char* d = (i % 2 == 0) ? "eng" : "hr";
+            f << d << "," << (2020 + (i % 4)) << "," << (i * 2) << "\n";
+        }
+    }
+    auto out = scan_csv(path)
+                   .filter(col("val") > lit<int64_t>(10))
+                   .with_column("doubled", col("val") * lit<int64_t>(2))
+                   .group_by({"dept"})
+                   .aggregate({{"s", col("doubled").sum()},
+                               {"n", col("val").count()}})
+                   .sort({"dept"}, true)
+                   .head(10)
+                   .collect();
+    assert(out.numRows() == 2);
+    assert(out.columnNames().size() == 3); // dept, s, n
+    std::cout << "OK\n";
+}
+
+void test28_parquet_roundtrip() {
+    std::cout << "test28_parquet_roundtrip ";
+    auto df = makeFrame({
+        {"id",    i64({1, 2, 3})},
+        {"name",  str({"Alice", "Bob", "Carol"})},
+        {"score", f64({90.5, 82.0, 75.25})},
+    });
+    const std::string path = "/tmp/dfl_rt_test.parquet";
+    df.write_parquet(path);
+    auto back = read_parquet(path);
+    assert(back.numRows() == 3);
+    assert(back.columnNames() == df.columnNames());
+    assert(back.columnTypes() == df.columnTypes());
+    auto ids = asI64(column(back, "id"));
+    assert((ids == std::vector<int64_t>{1, 2, 3}));
+    auto scores = asF64(column(back, "score"));
+    assert(std::abs(scores[0] - 90.5)  < 1e-9);
+    assert(std::abs(scores[2] - 75.25) < 1e-9);
+    std::cout << "OK\n";
+}
+
+void test29_optimizer_idempotency() {
+    std::cout << "test29_opt_idempotent .. ";
+    const std::string path = "/tmp/dfl_lazy_people.csv"; // reused
+    auto lf = scan_csv(path)
+                 .filter(col("age") > lit<int64_t>(20))
+                 .with_column("age2", col("age") * lit<int64_t>(1))
+                 .select({"id", "age2"})
+                 .head(100);
+    QueryOptimizer opt;
+    auto once  = opt.optimize(lf.plan());
+    auto twice = opt.optimize(once);
+
+    // Structural equality via DOT rendering — same plans render the same.
+    auto d1 = renderDotGraph(once);
+    auto d2 = renderDotGraph(twice);
+    assert(d1 == d2);
+    std::cout << "OK\n";
+}
+
+void test30_head_out_of_range() {
+    std::cout << "test30_head_out_of_range ";
+    auto df = makeFrame({{"x", i32({1, 2, 3, 4, 5})}});
+    auto h = df.head(1000);
+    assert(h.numRows() == 5);
+    auto h0 = df.head(0);
+    assert(h0.numRows() == 0);
+    std::cout << "OK\n";
+}
+
+void test31_type_error_message() {
+    std::cout << "test31_type_error_msg .. ";
+    auto df = makeFrame({
+        {"x", i32({1, 2, 3})},
+        {"s", str({"a", "b", "c"})},
+    });
+    bool threw_ia = false;
+    std::string msg;
+    try {
+        auto bad = df.select({ (col("s") + col("x")).alias("oops") });
+        (void)bad;
+    } catch (const std::invalid_argument& e) {
+        threw_ia = true;
+        msg      = e.what();
+    }
+    assert(threw_ia);
+    // Message must mention both type names so users can see what collided.
+    assert(msg.find("string") != std::string::npos);
+    assert(msg.find("int") != std::string::npos);
+    std::cout << "OK\n";
+}
+
 } // namespace
 
 int main() {
@@ -635,10 +877,21 @@ int main() {
         test18_expression_simplification();
         test19_limit_pushdown();
         test20_optimizer_benchmark();
+        test21_empty_dataframe();
+        test22_single_row_group_by();
+        test23_all_null_column();
+        test24_large_string_column();
+        test25_chained_filters();
+        test26_multi_key_join();
+        test27_eight_op_lazy_plan();
+        test28_parquet_roundtrip();
+        test29_optimizer_idempotency();
+        test30_head_out_of_range();
+        test31_type_error_message();
     } catch (const std::exception& e) {
         std::cerr << "FAILED: " << e.what() << "\n";
         return 1;
     }
-    std::cout << "ALL TESTS PASSED\n";
+    std::cout << "ALL 31 TESTS PASSED\n";
     return 0;
 }

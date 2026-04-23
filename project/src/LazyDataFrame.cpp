@@ -283,9 +283,31 @@ EagerDataFrame LazyDataFrame::collect_raw() const {
 
 // ---------------------------------------------------------------------------
 // explain() — render the optimised plan DAG to a PNG via the `dot` CLI.
-// Non-fatal: if `dot` is unavailable, we fall back to writing the DOT source
-// and printing a warning instead of crashing the user's program.
+// Non-fatal: if `dot` is unavailable, we fall back to preserving the DOT
+// source and printing a warning instead of crashing the user's program.
 // ---------------------------------------------------------------------------
+
+namespace {
+
+/// Tiny RAII guard for the intermediate .dot file we hand to Graphviz.
+/// When the `dot` rendering succeeds we unlink the temp; when it fails we
+/// keep the file around and surface its path to the user so they can
+/// reproduce the render manually (`dot -Tpng <path>`).
+struct TempDotFile {
+    std::string path;
+    bool        keep = false;
+
+    explicit TempDotFile(std::string p) : path(std::move(p)) {}
+    ~TempDotFile() {
+        if (!keep && !path.empty()) std::remove(path.c_str());
+    }
+
+    // Non-copyable — we own a unique filesystem resource.
+    TempDotFile(const TempDotFile&)            = delete;
+    TempDotFile& operator=(const TempDotFile&) = delete;
+};
+
+} // namespace
 
 void LazyDataFrame::explain(const std::string& pngPath) const {
     QueryOptimizer opt;
@@ -295,23 +317,25 @@ void LazyDataFrame::explain(const std::string& pngPath) const {
     const auto ts =
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
-    const std::string dot_path = "/tmp/plan_" + std::to_string(ts) + ".dot";
+    TempDotFile tmp("/tmp/plan_" + std::to_string(ts) + ".dot");
 
     {
-        std::ofstream f(dot_path);
+        std::ofstream f(tmp.path);
         if (!f) {
-            std::cerr << "Warning: explain() could not write " << dot_path << "\n";
+            std::cerr << "Warning: explain() could not write " << tmp.path << "\n";
+            tmp.keep = true; // but there's nothing to keep — path will be gone
             return;
         }
         f << dot;
     }
 
     const std::string cmd =
-        "dot -Tpng \"" + dot_path + "\" -o \"" + pngPath + "\" 2>/dev/null";
+        "dot -Tpng \"" + tmp.path + "\" -o \"" + pngPath + "\" 2>/dev/null";
     const int rc = std::system(cmd.c_str());
     if (rc != 0) {
+        tmp.keep = true;
         std::cerr << "Warning: Graphviz not installed or `dot` failed. "
-                     "DOT file written to " << dot_path << "\n";
+                     "DOT file written to " << tmp.path << "\n";
     }
 }
 

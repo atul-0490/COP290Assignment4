@@ -15,33 +15,45 @@ namespace dfl {
 // Expression AST
 // ---------------------------------------------------------------------------
 // All expression nodes derive from `Expr`. Expressions are immutable value
-// objects held via std::shared_ptr so they can be cheaply reused across
+// objects held via `std::shared_ptr` so they can be cheaply reused across
 // lazy plans and eager evaluations.
 // ---------------------------------------------------------------------------
 
+/// @brief Abstract base of the expression AST.
+///
+/// Derive from this to add a new expression kind; the evaluator uses
+/// `dynamic_pointer_cast` to dispatch on the concrete subclass. Every
+/// concrete Expr is immutable after construction.
 struct Expr {
     virtual ~Expr() = default;
 };
 
-/// Reference to a column in the input schema by name.
+/// @brief Reference to a column in the input schema by name.
+///
+/// Example: `col("age")` constructs a `ColExpr { name = "age" }`.
 struct ColExpr : Expr {
     std::string name;
 };
 
-/// Literal (constant) value. We store it as an arrow::Datum so that we can
-/// reuse Arrow's compute kernels, plus the logical ColType for type-checking.
+/// @brief Literal (constant) value.
+///
+/// Stored as an `arrow::Datum` so Arrow's compute kernels accept it
+/// directly; the logical `ColType` is retained for static type-checking.
 struct LitExpr : Expr {
     arrow::Datum value;
-    ColType type;
+    ColType      type;
 };
 
-/// Renames the result of `child` to `alias`.
+/// @brief Renames the result of `child` to `alias`.
+///
+/// Used by `col("x").alias("y")` and `select({ ... })` to choose output
+/// column names.
 struct AliasExpr : Expr {
     std::shared_ptr<Expr> child;
-    std::string alias;
+    std::string           alias;
 };
 
-/// Binary arithmetic / comparison / boolean operator.
+/// @brief Binary arithmetic / comparison / boolean operator.
 struct BinaryExpr : Expr {
     enum class Op {
         ADD, SUB, MUL, DIV, MOD,
@@ -54,7 +66,7 @@ struct BinaryExpr : Expr {
     Op op;
 };
 
-/// Unary numeric / boolean / null-check operator.
+/// @brief Unary numeric / boolean / null-check operator.
 struct UnaryExpr : Expr {
     enum class Op {
         NEG,
@@ -68,7 +80,10 @@ struct UnaryExpr : Expr {
     Op op;
 };
 
-/// Aggregation function used within `aggregate()` expressions.
+/// @brief Aggregation function (sum / mean / count / min / max).
+///
+/// Only valid inside the map passed to `aggregate()`. Attempting to
+/// evaluate an AggExpr during `filter()` or `select()` raises.
 struct AggExpr : Expr {
     enum class Func { SUM, MEAN, COUNT, MIN, MAX };
 
@@ -76,7 +91,8 @@ struct AggExpr : Expr {
     Func func;
 };
 
-/// String function. `arg` is used only for CONTAINS / STARTS_WITH / ENDS_WITH.
+/// @brief String function. `arg` is used only for CONTAINS /
+///        STARTS_WITH / ENDS_WITH.
 struct StringExpr : Expr {
     enum class Func {
         LENGTH,
@@ -88,8 +104,8 @@ struct StringExpr : Expr {
     };
 
     std::shared_ptr<Expr> child;
-    Func func;
-    std::string arg;
+    Func                  func;
+    std::string           arg;
 };
 
 // ---------------------------------------------------------------------------
@@ -98,8 +114,20 @@ struct StringExpr : Expr {
 // these are kept for internal use and for users who want raw nodes.
 // ---------------------------------------------------------------------------
 
+/// @brief Raw constructor for a `ColExpr` node.
+/// @param name The referenced column's name.
+/// @return     `std::shared_ptr<ColExpr>` upcast to Expr.
 std::shared_ptr<Expr> makeCol(const std::string& name);
 
+/// @brief Raw constructor for a `LitExpr` node carrying `value`.
+///
+/// Supports `int32_t`, `int64_t`, any other integer type (promoted to
+/// int64), `float`, `double`, `bool`, and anything convertible to
+/// `std::string` (string / const char* / char[]).
+///
+/// @tparam T     Any of the supported literal types.
+/// @param value  The literal's value.
+/// @return       `std::shared_ptr<LitExpr>` upcast to Expr.
 template <typename T>
 std::shared_ptr<Expr> makeLit(T value);
 
@@ -111,53 +139,120 @@ std::shared_ptr<Expr> makeLit(T value);
 //
 // ---------------------------------------------------------------------------
 
+/// @brief Ergonomic, operator-overloading wrapper around `Expr`.
+///
+/// All member functions and operators return a new `ExprBuilder` holding
+/// the appropriate `Expr` subclass. This enables terse, Pandas/Polars-
+/// style expression composition:
+///
+/// @code
+///   auto pred = (col("age") > lit(18)) & (col("income") < lit(50000.0));
+///   df.filter(pred);
+/// @endcode
 class ExprBuilder {
 public:
     ExprBuilder() = default;
+
+    /// @brief Wrap an already-constructed `Expr` shared pointer.
     explicit ExprBuilder(std::shared_ptr<Expr> e);
 
-    /// Unwrap the underlying Expr node.
+    /// @brief Unwrap the underlying Expr node.
+    /// @return The `shared_ptr<Expr>` this builder holds.
     std::shared_ptr<Expr> expr() const;
 
     // ----- naming / unary -----
+
+    /// @brief Rename the expression's output column.
+    /// @param name New output column name.
+    /// @return     An `AliasExpr` builder.
     ExprBuilder alias(const std::string& name) const;
+
+    /// @brief Absolute value of a numeric expression.
+    /// @return A builder that computes `|x|` element-wise.
+    /// @throws std::invalid_argument at evaluation time if the operand
+    ///         is non-numeric.
     ExprBuilder abs() const;
+
+    /// @brief Boolean column — `true` where the operand is null.
     ExprBuilder is_null() const;
+
+    /// @brief Boolean column — `true` where the operand is non-null.
     ExprBuilder is_not_null() const;
 
     // ----- string functions -----
+
+    /// @brief Unicode character length of a string column.
+    /// @return An int32 column with the codepoint length of each string.
+    /// @throws std::invalid_argument at eval time if operand is non-string.
     ExprBuilder length() const;
+
+    /// @brief Match-count of the substring `s` inside each string.
+    /// @param s The substring to search for.
+    /// @return  An integer column giving the number of matches per row.
     ExprBuilder contains(const std::string& s) const;
+
+    /// @brief Boolean "starts with" predicate on a string column.
     ExprBuilder starts_with(const std::string& s) const;
+
+    /// @brief Boolean "ends with" predicate on a string column.
     ExprBuilder ends_with(const std::string& s) const;
+
+    /// @brief Lowercase every element of a string column (UTF-8 aware).
     ExprBuilder to_lower() const;
+
+    /// @brief Uppercase every element of a string column (UTF-8 aware).
     ExprBuilder to_upper() const;
 
     // ----- aggregations -----
-    ExprBuilder sum() const;
-    ExprBuilder mean() const;
+
+    /// @brief Sum of values. Valid only inside `aggregate()`.
+    ExprBuilder sum()   const;
+    /// @brief Arithmetic mean. Valid only inside `aggregate()`.
+    ExprBuilder mean()  const;
+    /// @brief Count of non-null values. Valid only inside `aggregate()`.
     ExprBuilder count() const;
-    ExprBuilder min() const;
-    ExprBuilder max() const;
+    /// @brief Minimum value. Valid only inside `aggregate()`.
+    ExprBuilder min()   const;
+    /// @brief Maximum value. Valid only inside `aggregate()`.
+    ExprBuilder max()   const;
 
     // ----- arithmetic -----
+
+    /// @brief Element-wise addition. @return `lhs + rhs`.
     ExprBuilder operator+(const ExprBuilder& rhs) const;
+    /// @brief Element-wise subtraction. @return `lhs - rhs`.
     ExprBuilder operator-(const ExprBuilder& rhs) const;
+    /// @brief Element-wise multiplication. @return `lhs * rhs`.
     ExprBuilder operator*(const ExprBuilder& rhs) const;
+    /// @brief Element-wise division. @return `lhs / rhs`.
     ExprBuilder operator/(const ExprBuilder& rhs) const;
+    /// @brief Element-wise modulo. @return `lhs % rhs`.
     ExprBuilder operator%(const ExprBuilder& rhs) const;
 
     // ----- comparisons -----
+
+    /// @brief Element-wise equality. @return boolean column.
     ExprBuilder operator==(const ExprBuilder& rhs) const;
+    /// @brief Element-wise inequality. @return boolean column.
     ExprBuilder operator!=(const ExprBuilder& rhs) const;
+    /// @brief Element-wise less-than. @return boolean column.
     ExprBuilder operator< (const ExprBuilder& rhs) const;
+    /// @brief Element-wise less-than-or-equal. @return boolean column.
     ExprBuilder operator<=(const ExprBuilder& rhs) const;
+    /// @brief Element-wise greater-than. @return boolean column.
     ExprBuilder operator> (const ExprBuilder& rhs) const;
+    /// @brief Element-wise greater-than-or-equal. @return boolean column.
     ExprBuilder operator>=(const ExprBuilder& rhs) const;
 
     // ----- boolean -----
+
+    /// @brief Boolean AND (Kleene — null is propagated).
     ExprBuilder operator&(const ExprBuilder& rhs) const;
+
+    /// @brief Boolean OR (Kleene — null is propagated).
     ExprBuilder operator|(const ExprBuilder& rhs) const;
+
+    /// @brief Boolean NOT.
     ExprBuilder operator~() const;
 
 private:
@@ -171,8 +266,24 @@ private:
 //     lit(42)            → ExprBuilder wrapping a LitExpr
 // ---------------------------------------------------------------------------
 
+/// @brief Reference a column by name inside an expression.
+///
+/// The returned builder can be combined with operators and member
+/// functions to build compound expressions.
+///
+/// @param name The column name to reference at evaluation time.
+/// @return     An ExprBuilder wrapping a `ColExpr`.
+///
+/// @code
+///   auto adults = df.filter(col("age") >= lit(18));
+/// @endcode
 ExprBuilder col(const std::string& name);
 
+/// @brief Create a literal (constant) expression.
+///
+/// @tparam T    Any supported literal type (see `makeLit`).
+/// @param value The literal value.
+/// @return      An ExprBuilder wrapping a `LitExpr`.
 template <typename T>
 ExprBuilder lit(T value);
 
