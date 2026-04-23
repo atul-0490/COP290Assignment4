@@ -149,11 +149,29 @@ const std::shared_ptr<LogicalNode>& requireChild(const LogicalNode& n,
 }
 
 /// Run a Scan leaf — the only place data actually enters the pipeline.
+/// Honours optimizer annotations: trim to projected_columns before returning
+/// rows, then apply any row_limit absorbed from a LimitNode.
 EagerDataFrame runScan(const ScanNode& s) {
     if (s.path.empty()) {
         throw std::runtime_error("Scan: empty path");
     }
-    return s.isParquet ? read_parquet(s.path) : read_csv(s.path);
+    auto df = s.isParquet ? read_parquet(s.path) : read_csv(s.path);
+
+    if (!s.projected_columns.empty()) {
+        // Only keep projected columns that actually exist in the source —
+        // silently drop missing ones so a stale projection annotation
+        // doesn't crash the run.
+        std::vector<std::string> present;
+        present.reserve(s.projected_columns.size());
+        auto schema = df.table()->schema();
+        for (const auto& c : s.projected_columns) {
+            if (schema->GetFieldIndex(c) >= 0) present.push_back(c);
+        }
+        if (!present.empty()) df = df.select(present);
+    }
+
+    if (s.row_limit >= 0) df = df.head(s.row_limit);
+    return df;
 }
 
 /// When an AggNode sits directly above a GroupByNode, we want a single
@@ -256,6 +274,11 @@ EagerDataFrame LazyDataFrame::collect() const {
     QueryOptimizer opt;
     auto optimized = opt.optimize(plan_);
     return executePlan(optimized);
+}
+
+EagerDataFrame LazyDataFrame::collect_raw() const {
+    if (!plan_) return EagerDataFrame();
+    return executePlan(plan_);
 }
 
 // ---------------------------------------------------------------------------

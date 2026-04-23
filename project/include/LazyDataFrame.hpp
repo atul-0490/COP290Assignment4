@@ -56,6 +56,10 @@ public:
     /// Optimise the plan and execute it, returning a materialised frame.
     EagerDataFrame collect() const;
 
+    /// Execute the plan WITHOUT running the QueryOptimizer. Primarily used
+    /// by benchmarks and tests that want to measure optimizer speedups.
+    EagerDataFrame collect_raw() const;
+
     /// Dump the (optimised) plan DAG to the given .png path using Graphviz.
     void explain(const std::string& pngPath) const;
 

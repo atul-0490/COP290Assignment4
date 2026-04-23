@@ -324,4 +324,17 @@ tests/CMakeFiles/test_main.dir/test_main.cpp.o: \
  /home/atulk/asm/COP290/COP290Assignment4/project/include/Expr.hpp \
  /home/atulk/asm/COP290/COP290Assignment4/project/include/IO.hpp \
  /home/atulk/asm/COP290/COP290Assignment4/project/include/LazyDataFrame.hpp \
- /home/atulk/asm/COP290/COP290Assignment4/project/include/LogicalPlan.hpp
+ /home/atulk/asm/COP290/COP290Assignment4/project/include/LogicalPlan.hpp \
+ /home/atulk/asm/COP290/COP290Assignment4/project/include/QueryOptimizer.hpp \
+ /usr/include/c++/13/chrono /usr/include/c++/13/bits/chrono.h \
+ /usr/include/c++/13/ctime /usr/include/c++/13/sstream \
+ /usr/include/c++/13/bits/sstream.tcc \
+ /usr/include/c++/13/bits/chrono_io.h /usr/include/c++/13/iomanip \
+ /usr/include/c++/13/locale \
+ /usr/include/c++/13/bits/locale_facets_nonio.h \
+ /usr/include/x86_64-linux-gnu/c++/13/bits/time_members.h \
+ /usr/include/x86_64-linux-gnu/c++/13/bits/messages_members.h \
+ /usr/include/libintl.h /usr/include/c++/13/bits/locale_facets_nonio.tcc \
+ /usr/include/c++/13/bits/locale_conv.h \
+ /usr/include/c++/13/bits/quoted_string.h /usr/include/c++/13/format \
+ /usr/include/c++/13/charconv /usr/include/c++/13/span

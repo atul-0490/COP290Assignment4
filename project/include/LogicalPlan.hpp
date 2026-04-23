@@ -24,9 +24,16 @@ struct LogicalNode {
 };
 
 /// Leaf node: reads data from a CSV or Parquet file.
+///
+/// `projected_columns` (when non-empty) and `row_limit` (when >= 0) are
+/// annotations set by the QueryOptimizer (projection / limit pushdown).
+/// The executor applies them immediately after the file is read so that
+/// Parquet projection and whole-file scans can be trimmed.
 struct ScanNode : LogicalNode {
     std::string path;
     bool isParquet = false;
+    std::vector<std::string> projected_columns;   // empty = keep all
+    int64_t row_limit = -1;                       // -1 = no limit
 };
 
 /// Filters rows by a boolean predicate expression.

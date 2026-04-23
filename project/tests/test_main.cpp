@@ -23,7 +23,10 @@
 #include "IO.hpp"
 #include "LazyDataFrame.hpp"
 #include "LogicalPlan.hpp"
+#include "QueryOptimizer.hpp"
 #include "TypeUtils.hpp"
+
+#include <chrono>
 
 using namespace dfl;
 
@@ -411,6 +414,203 @@ void test15_lazy_sink_csv() {
     std::cout << "OK\n";
 }
 
+// ===========================================================================
+// Step 4 — QueryOptimizer tests
+// ===========================================================================
+
+/// Convenience: run `f` a few times and return the minimum wall-clock time
+/// so benchmark assertions are less flaky under noisy CPUs.
+template <typename F>
+double minTimeMs(F&& f, int reps = 3) {
+    double best = 1e18;
+    for (int i = 0; i < reps; ++i) {
+        auto t0 = std::chrono::steady_clock::now();
+        f();
+        auto t1 = std::chrono::steady_clock::now();
+        double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        if (ms < best) best = ms;
+    }
+    return best;
+}
+
+/// Write a CSV with `nrows` rows and `ncols+1` int64 columns (an "id" col
+/// plus `value0..valueN-1`). Used by the heavy optimizer benchmark.
+void writeWideIntCsv(const std::string& path, int64_t nrows, int ncols) {
+    std::ofstream f(path);
+    f << "id";
+    for (int c = 0; c < ncols; ++c) f << ",value" << c;
+    f << "\n";
+    for (int64_t r = 0; r < nrows; ++r) {
+        f << r;
+        for (int c = 0; c < ncols; ++c) f << ',' << (r * (c + 1) % 10000);
+        f << '\n';
+    }
+}
+
+void test16_predicate_pushdown() {
+    std::cout << "test16_predicate_pushdown ... ";
+    const std::string left  = "/tmp/dfl_opt_left.csv";
+    const std::string right = "/tmp/dfl_opt_right.csv";
+
+    // Build a left table with 2000 rows, a right with 200.
+    {
+        std::ofstream f(left);
+        f << "id,left_val\n";
+        for (int i = 0; i < 2000; ++i) f << i << ',' << i << '\n';
+    }
+    {
+        std::ofstream f(right);
+        f << "id,right_val\n";
+        for (int i = 0; i < 200; ++i) f << i << ',' << (1000 + i) << '\n';
+    }
+
+    auto lf = scan_csv(left)
+                  .join(scan_csv(right), {"id"}, "inner")
+                  .filter(col("left_val") > lit<int64_t>(5));
+
+    // Correctness: optimized must match raw execution.
+    auto raw = lf.collect_raw();
+    auto opt = lf.collect();
+    assert(raw.numRows() == opt.numRows());
+    assert(raw.columnNames() == opt.columnNames());
+
+    // Verify the predicate was physically moved below the Join: after
+    // optimization the JoinNode's LEFT child should be a FilterNode.
+    QueryOptimizer o;
+    auto optimized = o.optimize(lf.plan());
+    auto jn = std::dynamic_pointer_cast<JoinNode>(optimized);
+    assert(jn != nullptr);
+    assert(!jn->children.empty());
+    assert(std::dynamic_pointer_cast<FilterNode>(jn->children[0]) != nullptr);
+
+    std::cout << "OK\n";
+}
+
+void test17_constant_folding() {
+    std::cout << "test17_constant_folding ..... ";
+    const std::string path = "/tmp/dfl_lazy_people.csv"; // reused fixture
+    auto lf = scan_csv(path).filter(col("age") > (lit<int64_t>(20) + lit<int64_t>(10)));
+
+    QueryOptimizer o;
+    auto optimized = o.optimize(lf.plan());
+
+    // After folding, the filter's predicate must be (col("age") > lit(30)).
+    auto filter = std::dynamic_pointer_cast<FilterNode>(optimized);
+    assert(filter != nullptr);
+    auto bin = std::dynamic_pointer_cast<BinaryExpr>(filter->predicate);
+    assert(bin != nullptr && bin->op == BinaryExpr::Op::GT);
+    auto lhs = std::dynamic_pointer_cast<ColExpr>(bin->left);
+    auto rhs = std::dynamic_pointer_cast<LitExpr>(bin->right);
+    assert(lhs && lhs->name == "age");
+    assert(rhs != nullptr);
+    auto scalar = rhs->value.scalar();
+    assert(scalar && scalar->is_valid);
+    assert(std::static_pointer_cast<arrow::Int64Scalar>(scalar)->value == 30);
+
+    // Result should match the unoptimized version.
+    auto raw = lf.collect_raw();
+    auto opt = lf.collect();
+    assert(raw.numRows() == opt.numRows());
+    std::cout << "OK\n";
+}
+
+void test18_expression_simplification() {
+    std::cout << "test18_expression_simpl ..... ";
+    const std::string path = "/tmp/dfl_opt_left.csv"; // reused fixture (id, left_val)
+    auto lf = scan_csv(path).select({
+        col("id") * lit<int64_t>(1),          // → col("id")
+        col("left_val") + lit<int64_t>(0),    // → col("left_val")
+    });
+
+    QueryOptimizer o;
+    auto optimized = o.optimize(lf.plan());
+    auto sel = std::dynamic_pointer_cast<SelectNode>(optimized);
+    assert(sel != nullptr && sel->columns.size() == 2);
+
+    auto c0 = std::dynamic_pointer_cast<ColExpr>(sel->columns[0].expr());
+    auto c1 = std::dynamic_pointer_cast<ColExpr>(sel->columns[1].expr());
+    assert(c0 && c0->name == "id");
+    assert(c1 && c1->name == "left_val");
+
+    auto raw = lf.collect_raw();
+    auto opt = lf.collect();
+    assert(raw.numRows() == opt.numRows());
+    std::cout << "OK\n";
+}
+
+void test19_limit_pushdown() {
+    std::cout << "test19_limit_pushdown ....... ";
+    const std::string path = "/tmp/dfl_opt_left.csv"; // id, left_val
+    auto lf = scan_csv(path)
+                  .with_column("z", col("left_val") + lit<int64_t>(1))
+                  .head(5);
+
+    QueryOptimizer o;
+    auto optimized = o.optimize(lf.plan());
+
+    // Expected shape: WithColumn → Scan(row_limit = 5)
+    auto wc = std::dynamic_pointer_cast<WithColNode>(optimized);
+    assert(wc != nullptr);
+    assert(!wc->children.empty());
+    auto scan = std::dynamic_pointer_cast<ScanNode>(wc->children[0]);
+    assert(scan != nullptr);
+    assert(scan->row_limit == 5);
+
+    // Results must match the un-pushed version.
+    auto raw = lf.collect_raw();
+    auto opt = lf.collect();
+    assert(raw.numRows() == 5);
+    assert(opt.numRows() == 5);
+    std::cout << "OK\n";
+}
+
+void test20_optimizer_benchmark() {
+    std::cout << "test20_optimizer_bench ...... " << std::flush;
+
+    // Build 20k × 10-column left CSV and 20k × 2-column right CSV.
+    const std::string big_left  = "/tmp/dfl_bench_left.csv";
+    const std::string big_right = "/tmp/dfl_bench_right.csv";
+    constexpr int64_t NROWS = 20000;
+    writeWideIntCsv(big_left, NROWS, /*ncols=*/9);      // id + value0..value8
+    {
+        std::ofstream f(big_right);
+        f << "id,side\n";
+        for (int64_t i = 0; i < NROWS; ++i) f << i << ',' << i << '\n';
+    }
+
+    auto build = [&]() {
+        return scan_csv(big_left)
+                 .join(scan_csv(big_right), {"id"}, "inner")
+                 .filter(col("value0") > lit<int64_t>(1000))
+                 .select({"id", "value0"})
+                 .head(100);
+    };
+
+    // Warmup once so the schema cache and Arrow kernels are primed.
+    (void)build().collect();
+
+    double raw_ms = minTimeMs([&]() {
+        auto df = build().collect_raw();
+        assert(df.numRows() <= 100);
+    });
+    double opt_ms = minTimeMs([&]() {
+        auto df = build().collect();
+        assert(df.numRows() <= 100);
+    });
+
+    std::cout << "raw=" << raw_ms << "ms opt=" << opt_ms << "ms ... ";
+
+    // Correctness parity on a single run.
+    auto raw = build().collect_raw();
+    auto opt = build().collect();
+    assert(raw.numRows() == opt.numRows());
+    assert(raw.columnNames() == opt.columnNames());
+
+    // Performance gate: optimizer must beat the unoptimized path by >=10%.
+    assert(opt_ms < raw_ms * 0.9);
+    std::cout << "OK\n";
+}
+
 } // namespace
 
 int main() {
@@ -430,6 +630,11 @@ int main() {
         test13_lazy_join();
         test14_lazy_sort_head_parquet();
         test15_lazy_sink_csv();
+        test16_predicate_pushdown();
+        test17_constant_folding();
+        test18_expression_simplification();
+        test19_limit_pushdown();
+        test20_optimizer_benchmark();
     } catch (const std::exception& e) {
         std::cerr << "FAILED: " << e.what() << "\n";
         return 1;

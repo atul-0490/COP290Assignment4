@@ -295,4 +295,31 @@ CMakeFiles/dataframelib.dir/src/QueryOptimizer.cpp.o: \
  /usr/include/arrow/util/key_value_metadata.h \
  /usr/include/arrow/visit_array_inline.h \
  /usr/include/arrow/visit_scalar_inline.h \
- /home/atulk/asm/COP290/COP290Assignment4/project/include/TypeUtils.hpp
+ /home/atulk/asm/COP290/COP290Assignment4/project/include/TypeUtils.hpp \
+ /usr/include/c++/13/fstream /usr/include/c++/13/istream \
+ /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/bits/codecvt.h \
+ /usr/include/x86_64-linux-gnu/c++/13/bits/basic_file.h \
+ /usr/include/x86_64-linux-gnu/c++/13/bits/c++io.h \
+ /usr/include/c++/13/bits/fstream.tcc /usr/include/c++/13/set \
+ /usr/include/c++/13/bits/stl_set.h \
+ /usr/include/c++/13/bits/stl_multiset.h /usr/include/c++/13/sstream \
+ /usr/include/c++/13/bits/sstream.tcc /usr/include/arrow/io/api.h \
+ /usr/include/arrow/io/buffered.h /usr/include/arrow/io/concurrency.h \
+ /usr/include/arrow/io/interfaces.h /usr/include/arrow/util/cancel.h \
+ /usr/include/arrow/io/compressed.h /usr/include/arrow/io/file.h \
+ /usr/include/arrow/io/hdfs.h /usr/include/arrow/io/memory.h \
+ /usr/include/parquet/arrow/reader.h /usr/include/parquet/file_reader.h \
+ /usr/include/arrow/io/caching.h /usr/include/parquet/metadata.h \
+ /usr/include/c++/13/span /usr/include/parquet/encryption/type_fwd.h \
+ /usr/include/parquet/platform.h /usr/include/parquet/properties.h \
+ /usr/include/c++/13/unordered_set \
+ /usr/include/c++/13/bits/unordered_set.h \
+ /usr/include/arrow/util/compression.h \
+ /usr/include/parquet/encryption/encryption.h \
+ /usr/include/arrow/util/secure_string.h /usr/include/parquet/exception.h \
+ /usr/include/parquet/schema.h /usr/include/parquet/types.h \
+ /usr/include/parquet/type_fwd.h /usr/include/parquet/windows_fixup.h \
+ /usr/include/arrow/util/windows_fixup.h \
+ /usr/include/parquet/parquet_version.h \
+ /home/atulk/asm/COP290/COP290Assignment4/project/include/EagerDataFrame.hpp \
+ /home/atulk/asm/COP290/COP290Assignment4/project/include/DataFrame.hpp

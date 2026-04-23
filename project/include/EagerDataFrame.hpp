@@ -61,6 +61,13 @@ public:
     // --- Access ---
     std::shared_ptr<arrow::Table> table() const;
 
+    /// Evaluate a scalar / array-producing expression against this frame.
+    /// Exposed (intentionally public) so that the QueryOptimizer can reuse
+    /// this evaluator when constant-folding pure expressions against a
+    /// dummy 1-row table.
+    std::shared_ptr<arrow::ChunkedArray> evalExpr(
+        const std::shared_ptr<Expr>& expr) const;
+
 private:
     std::shared_ptr<arrow::Table> table_;
 
@@ -68,11 +75,6 @@ private:
     /// bucket rows by these key columns before applying each aggregation.
     /// `group_by()` returns a new EagerDataFrame with this set.
     std::vector<std::string> group_keys_;
-
-    /// Evaluate a scalar / array-producing expression against this frame.
-    /// Returns a ChunkedArray with one entry per row of the underlying table.
-    std::shared_ptr<arrow::ChunkedArray> evalExpr(
-        const std::shared_ptr<Expr>& expr) const;
 };
 
 } // namespace dfl
