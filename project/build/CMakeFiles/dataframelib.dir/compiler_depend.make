@@ -1301,8 +1301,10 @@ CMakeFiles/dataframelib.dir/src/LazyDataFrame.cpp.o: /home/atulk/asm/COP290/COP2
   /home/atulk/asm/COP290/COP290Assignment4/project/include/DataFrame.hpp \
   /home/atulk/asm/COP290/COP290Assignment4/project/include/EagerDataFrame.hpp \
   /home/atulk/asm/COP290/COP290Assignment4/project/include/Expr.hpp \
+  /home/atulk/asm/COP290/COP290Assignment4/project/include/IO.hpp \
   /home/atulk/asm/COP290/COP290Assignment4/project/include/LazyDataFrame.hpp \
   /home/atulk/asm/COP290/COP290Assignment4/project/include/LogicalPlan.hpp \
+  /home/atulk/asm/COP290/COP290Assignment4/project/include/QueryOptimizer.hpp \
   /home/atulk/asm/COP290/COP290Assignment4/project/include/TypeUtils.hpp \
   /usr/include/alloca.h \
   /usr/include/arrow/api.h \
@@ -1406,6 +1408,9 @@ CMakeFiles/dataframelib.dir/src/LazyDataFrame.cpp.o: /home/atulk/asm/COP290/COP2
   /usr/include/c++/13/bits/basic_string.tcc \
   /usr/include/c++/13/bits/char_traits.h \
   /usr/include/c++/13/bits/charconv.h \
+  /usr/include/c++/13/bits/chrono.h \
+  /usr/include/c++/13/bits/chrono_io.h \
+  /usr/include/c++/13/bits/codecvt.h \
   /usr/include/c++/13/bits/concept_check.h \
   /usr/include/c++/13/bits/cpp_type_traits.h \
   /usr/include/c++/13/bits/cxxabi_forced.h \
@@ -1415,6 +1420,7 @@ CMakeFiles/dataframelib.dir/src/LazyDataFrame.cpp.o: /home/atulk/asm/COP290/COP2
   /usr/include/c++/13/bits/exception.h \
   /usr/include/c++/13/bits/exception_defines.h \
   /usr/include/c++/13/bits/exception_ptr.h \
+  /usr/include/c++/13/bits/fstream.tcc \
   /usr/include/c++/13/bits/functexcept.h \
   /usr/include/c++/13/bits/functional_hash.h \
   /usr/include/c++/13/bits/hash_bytes.h \
@@ -1422,11 +1428,15 @@ CMakeFiles/dataframelib.dir/src/LazyDataFrame.cpp.o: /home/atulk/asm/COP290/COP2
   /usr/include/c++/13/bits/hashtable_policy.h \
   /usr/include/c++/13/bits/invoke.h \
   /usr/include/c++/13/bits/ios_base.h \
+  /usr/include/c++/13/bits/istream.tcc \
   /usr/include/c++/13/bits/iterator_concepts.h \
   /usr/include/c++/13/bits/locale_classes.h \
   /usr/include/c++/13/bits/locale_classes.tcc \
+  /usr/include/c++/13/bits/locale_conv.h \
   /usr/include/c++/13/bits/locale_facets.h \
   /usr/include/c++/13/bits/locale_facets.tcc \
+  /usr/include/c++/13/bits/locale_facets_nonio.h \
+  /usr/include/c++/13/bits/locale_facets_nonio.tcc \
   /usr/include/c++/13/bits/localefwd.h \
   /usr/include/c++/13/bits/max_size_type.h \
   /usr/include/c++/13/bits/memory_resource.h \
@@ -1441,6 +1451,7 @@ CMakeFiles/dataframelib.dir/src/LazyDataFrame.cpp.o: /home/atulk/asm/COP290/COP2
   /usr/include/c++/13/bits/postypes.h \
   /usr/include/c++/13/bits/predefined_ops.h \
   /usr/include/c++/13/bits/ptr_traits.h \
+  /usr/include/c++/13/bits/quoted_string.h \
   /usr/include/c++/13/bits/range_access.h \
   /usr/include/c++/13/bits/ranges_algo.h \
   /usr/include/c++/13/bits/ranges_algobase.h \
@@ -1453,6 +1464,7 @@ CMakeFiles/dataframelib.dir/src/LazyDataFrame.cpp.o: /home/atulk/asm/COP290/COP2
   /usr/include/c++/13/bits/shared_ptr.h \
   /usr/include/c++/13/bits/shared_ptr_atomic.h \
   /usr/include/c++/13/bits/shared_ptr_base.h \
+  /usr/include/c++/13/bits/sstream.tcc \
   /usr/include/c++/13/bits/std_abs.h \
   /usr/include/c++/13/bits/std_function.h \
   /usr/include/c++/13/bits/std_mutex.h \
@@ -1491,6 +1503,8 @@ CMakeFiles/dataframelib.dir/src/LazyDataFrame.cpp.o: /home/atulk/asm/COP290/COP2
   /usr/include/c++/13/cassert \
   /usr/include/c++/13/cctype \
   /usr/include/c++/13/cerrno \
+  /usr/include/c++/13/charconv \
+  /usr/include/c++/13/chrono \
   /usr/include/c++/13/climits \
   /usr/include/c++/13/clocale \
   /usr/include/c++/13/compare \
@@ -1500,6 +1514,7 @@ CMakeFiles/dataframelib.dir/src/LazyDataFrame.cpp.o: /home/atulk/asm/COP290/COP2
   /usr/include/c++/13/cstdio \
   /usr/include/c++/13/cstdlib \
   /usr/include/c++/13/cstring \
+  /usr/include/c++/13/ctime \
   /usr/include/c++/13/cwchar \
   /usr/include/c++/13/cwctype \
   /usr/include/c++/13/debug/assertions.h \
@@ -1512,12 +1527,18 @@ CMakeFiles/dataframelib.dir/src/LazyDataFrame.cpp.o: /home/atulk/asm/COP290/COP2
   /usr/include/c++/13/ext/numeric_traits.h \
   /usr/include/c++/13/ext/string_conversions.h \
   /usr/include/c++/13/ext/type_traits.h \
+  /usr/include/c++/13/format \
+  /usr/include/c++/13/fstream \
   /usr/include/c++/13/functional \
   /usr/include/c++/13/initializer_list \
+  /usr/include/c++/13/iomanip \
   /usr/include/c++/13/ios \
   /usr/include/c++/13/iosfwd \
+  /usr/include/c++/13/iostream \
+  /usr/include/c++/13/istream \
   /usr/include/c++/13/iterator \
   /usr/include/c++/13/limits \
+  /usr/include/c++/13/locale \
   /usr/include/c++/13/map \
   /usr/include/c++/13/memory \
   /usr/include/c++/13/new \
@@ -1531,6 +1552,8 @@ CMakeFiles/dataframelib.dir/src/LazyDataFrame.cpp.o: /home/atulk/asm/COP290/COP2
   /usr/include/c++/13/pstl/glue_numeric_defs.h \
   /usr/include/c++/13/pstl/pstl_config.h \
   /usr/include/c++/13/ratio \
+  /usr/include/c++/13/span \
+  /usr/include/c++/13/sstream \
   /usr/include/c++/13/stdexcept \
   /usr/include/c++/13/streambuf \
   /usr/include/c++/13/string \
@@ -1548,6 +1571,7 @@ CMakeFiles/dataframelib.dir/src/LazyDataFrame.cpp.o: /home/atulk/asm/COP290/COP2
   /usr/include/errno.h \
   /usr/include/features-time64.h \
   /usr/include/features.h \
+  /usr/include/libintl.h \
   /usr/include/limits.h \
   /usr/include/linux/close_range.h \
   /usr/include/linux/errno.h \
@@ -1656,8 +1680,10 @@ CMakeFiles/dataframelib.dir/src/LazyDataFrame.cpp.o: /home/atulk/asm/COP290/COP2
   /usr/include/x86_64-linux-gnu/bits/wordsize.h \
   /usr/include/x86_64-linux-gnu/bits/xopen_lim.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/atomic_word.h \
+  /usr/include/x86_64-linux-gnu/c++/13/bits/basic_file.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/c++allocator.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
+  /usr/include/x86_64-linux-gnu/c++/13/bits/c++io.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/c++locale.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/cpu_defines.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/ctype_base.h \
@@ -1665,7 +1691,9 @@ CMakeFiles/dataframelib.dir/src/LazyDataFrame.cpp.o: /home/atulk/asm/COP290/COP2
   /usr/include/x86_64-linux-gnu/c++/13/bits/error_constants.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/gthr-default.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/gthr.h \
+  /usr/include/x86_64-linux-gnu/c++/13/bits/messages_members.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
+  /usr/include/x86_64-linux-gnu/c++/13/bits/time_members.h \
   /usr/include/x86_64-linux-gnu/gnu/stubs-64.h \
   /usr/include/x86_64-linux-gnu/gnu/stubs.h \
   /usr/include/x86_64-linux-gnu/sys/cdefs.h \
@@ -1801,6 +1829,7 @@ CMakeFiles/dataframelib.dir/src/LogicalPlan.cpp.o: /home/atulk/asm/COP290/COP290
   /usr/include/c++/13/bits/hashtable_policy.h \
   /usr/include/c++/13/bits/invoke.h \
   /usr/include/c++/13/bits/ios_base.h \
+  /usr/include/c++/13/bits/istream.tcc \
   /usr/include/c++/13/bits/iterator_concepts.h \
   /usr/include/c++/13/bits/locale_classes.h \
   /usr/include/c++/13/bits/locale_classes.tcc \
@@ -1832,6 +1861,7 @@ CMakeFiles/dataframelib.dir/src/LogicalPlan.cpp.o: /home/atulk/asm/COP290/COP290
   /usr/include/c++/13/bits/shared_ptr.h \
   /usr/include/c++/13/bits/shared_ptr_atomic.h \
   /usr/include/c++/13/bits/shared_ptr_base.h \
+  /usr/include/c++/13/bits/sstream.tcc \
   /usr/include/c++/13/bits/std_abs.h \
   /usr/include/c++/13/bits/std_function.h \
   /usr/include/c++/13/bits/std_mutex.h \
@@ -1895,6 +1925,7 @@ CMakeFiles/dataframelib.dir/src/LogicalPlan.cpp.o: /home/atulk/asm/COP290/COP290
   /usr/include/c++/13/initializer_list \
   /usr/include/c++/13/ios \
   /usr/include/c++/13/iosfwd \
+  /usr/include/c++/13/istream \
   /usr/include/c++/13/iterator \
   /usr/include/c++/13/limits \
   /usr/include/c++/13/map \
@@ -1910,6 +1941,7 @@ CMakeFiles/dataframelib.dir/src/LogicalPlan.cpp.o: /home/atulk/asm/COP290/COP290
   /usr/include/c++/13/pstl/glue_numeric_defs.h \
   /usr/include/c++/13/pstl/pstl_config.h \
   /usr/include/c++/13/ratio \
+  /usr/include/c++/13/sstream \
   /usr/include/c++/13/stdexcept \
   /usr/include/c++/13/streambuf \
   /usr/include/c++/13/string \
@@ -2812,6 +2844,28 @@ CMakeFiles/dataframelib.dir/src/TypeUtils.cpp.o: /home/atulk/asm/COP290/COP290As
   /usr/lib/gcc/x86_64-linux-gnu/13/include/syslimits.h
 
 
+/usr/include/x86_64-linux-gnu/c++/13/bits/time_members.h:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/messages_members.h:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/basic_file.h:
+
+/usr/include/libintl.h:
+
+/usr/include/c++/13/locale:
+
+/usr/include/c++/13/fstream:
+
+/usr/include/c++/13/format:
+
+/usr/include/c++/13/ctime:
+
+/usr/include/c++/13/chrono:
+
+/usr/include/c++/13/bits/fstream.tcc:
+
+/usr/include/c++/13/bits/chrono_io.h:
+
 /usr/include/parquet/metadata.h:
 
 /usr/include/c++/13/span:
@@ -2898,6 +2952,8 @@ CMakeFiles/dataframelib.dir/src/TypeUtils.cpp.o: /home/atulk/asm/COP290/COP290As
 
 /usr/include/x86_64-linux-gnu/bits/stdlib.h:
 
+/usr/include/c++/13/bits/quoted_string.h:
+
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:
 
 /usr/include/x86_64-linux-gnu/bits/stdio.h:
@@ -2946,11 +3002,15 @@ CMakeFiles/dataframelib.dir/src/TypeUtils.cpp.o: /home/atulk/asm/COP290/COP290As
 
 /usr/include/x86_64-linux-gnu/bits/environments.h:
 
+/usr/include/c++/13/bits/chrono.h:
+
 /usr/include/x86_64-linux-gnu/bits/endianness.h:
 
 /usr/include/x86_64-linux-gnu/bits/endian.h:
 
 /usr/include/x86_64-linux-gnu/bits/cpu-set.h:
+
+/usr/include/c++/13/bits/locale_facets_nonio.h:
 
 /usr/include/x86_64-linux-gnu/bits/confname.h:
 
@@ -2972,6 +3032,8 @@ CMakeFiles/dataframelib.dir/src/TypeUtils.cpp.o: /home/atulk/asm/COP290/COP290As
 
 /usr/include/syscall.h:
 
+/usr/include/c++/13/iomanip:
+
 /usr/include/strings.h:
 
 /usr/include/string.h:
@@ -2981,6 +3043,8 @@ CMakeFiles/dataframelib.dir/src/TypeUtils.cpp.o: /home/atulk/asm/COP290/COP290As
 /usr/include/stdc-predef.h:
 
 /usr/include/pthread.h:
+
+/usr/include/c++/13/bits/locale_facets_nonio.tcc:
 
 /usr/include/parquet/type_fwd.h:
 
@@ -3019,6 +3083,8 @@ CMakeFiles/dataframelib.dir/src/TypeUtils.cpp.o: /home/atulk/asm/COP290/COP290As
 /usr/include/x86_64-linux-gnu/sys/types.h:
 
 /usr/include/c++/13/unordered_set:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/c++io.h:
 
 /usr/include/c++/13/typeinfo:
 
@@ -3231,6 +3297,8 @@ CMakeFiles/dataframelib.dir/src/TypeUtils.cpp.o: /home/atulk/asm/COP290/COP290As
 /usr/include/arrow/io/concurrency.h:
 
 /usr/include/arrow/io/buffered.h:
+
+/usr/include/c++/13/bits/codecvt.h:
 
 /usr/include/c++/13/bits/stl_tree.h:
 
@@ -3492,6 +3560,8 @@ CMakeFiles/dataframelib.dir/src/TypeUtils.cpp.o: /home/atulk/asm/COP290/COP290As
 
 /usr/include/c++/13/atomic:
 
+/usr/include/c++/13/charconv:
+
 /usr/include/arrow/compute/api_aggregate.h:
 
 /usr/include/c++/13/backward/binders.h:
@@ -3585,6 +3655,8 @@ CMakeFiles/dataframelib.dir/src/TypeUtils.cpp.o: /home/atulk/asm/COP290/COP290As
 /usr/include/c++/13/bits/exception.h:
 
 /usr/include/c++/13/bits/exception_ptr.h:
+
+/usr/include/c++/13/bits/locale_conv.h:
 
 /usr/include/c++/13/bits/istream.tcc:
 

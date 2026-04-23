@@ -27,6 +27,10 @@ public:
     LazyDataFrame select(const std::vector<std::string>& columns) const;
     LazyDataFrame select(const std::vector<ExprBuilder>& exprs) const;
 
+    /// Disambiguates `lf.select({"a","b"})` the same way EagerDataFrame does
+    /// (see EagerDataFrame::select(std::initializer_list<const char*>)).
+    LazyDataFrame select(std::initializer_list<const char*> columns) const;
+
     // --- Row operations ---
     LazyDataFrame filter(const ExprBuilder& predicate) const;
     LazyDataFrame with_column(const std::string& name,

@@ -21,6 +21,8 @@
 #include "EagerDataFrame.hpp"
 #include "Expr.hpp"
 #include "IO.hpp"
+#include "LazyDataFrame.hpp"
+#include "LogicalPlan.hpp"
 #include "TypeUtils.hpp"
 
 using namespace dfl;
@@ -251,8 +253,25 @@ void test8_type_error() {
     std::cout << "OK\n";
 }
 
+// ---------------------------------------------------------------------------
+// Fixture helpers for lazy tests — write small CSV / Parquet files on demand.
+// ---------------------------------------------------------------------------
+
+void writeCsvFixture(const std::string& path, const std::string& body) {
+    std::ofstream f(path);
+    f << body;
+}
+
+void writeParquetFixtureFromEager(const std::string& path,
+                                   const EagerDataFrame& df) {
+    df.write_parquet(path);
+}
+
+// ---------------------------------------------------------------------------
 // Bonus coverage: make sure string funcs and aggregations really work,
 // plus is_null / is_not_null / ends_with.
+// ---------------------------------------------------------------------------
+
 void test9_string_and_agg() {
     std::cout << "test9_strings_and_agg .. ";
     auto df = makeFrame({
@@ -269,6 +288,129 @@ void test9_string_and_agg() {
     std::cout << "OK\n";
 }
 
+// ---------------------------------------------------------------------------
+// Lazy-mode tests (Step 3).
+// ---------------------------------------------------------------------------
+
+void test10_lazy_collect() {
+    std::cout << "test10_lazy_collect .... ";
+    const std::string path = "/tmp/dfl_lazy_people.csv";
+    writeCsvFixture(path,
+        "id,age\n"
+        "1,10\n"
+        "2,25\n"
+        "3,30\n"
+        "4,45\n"
+        "5,60\n");
+
+    auto lf = scan_csv(path);
+    auto out = lf.filter(col("age") > lit<int64_t>(20)).head(5).collect();
+    assert(out.numRows() == 4);
+    std::cout << "OK\n";
+}
+
+void test11_lazy_explain() {
+    std::cout << "test11_lazy_explain .... ";
+    const std::string csv = "/tmp/dfl_lazy_people.csv"; // reused from test10
+    auto lf = scan_csv(csv)
+                  .filter(col("age") > lit<int64_t>(20))
+                  .select({"id", "age"})
+                  .sort({"age"}, false)
+                  .head(10);
+
+    // Must be non-fatal whether or not `dot` is installed.
+    const std::string png = "/tmp/dfl_lazy_plan.png";
+    lf.explain(png);
+
+    // Also sanity-check the DOT string directly so this test asserts
+    // something concrete even if the PNG fails to render.
+    auto dot = renderDotGraph(lf.plan());
+    assert(dot.find("digraph") != std::string::npos);
+    assert(dot.find("Filter") != std::string::npos);
+    assert(dot.find("Sort")   != std::string::npos);
+    assert(dot.find("Limit")  != std::string::npos);
+    std::cout << "OK\n";
+}
+
+void test12_lazy_group_aggregate() {
+    std::cout << "test12_lazy_group_agg .. ";
+    const std::string path = "/tmp/dfl_lazy_dept.csv";
+    writeCsvFixture(path,
+        "dept,salary\n"
+        "eng,100.0\n"
+        "hr,50.0\n"
+        "eng,120.0\n"
+        "hr,60.0\n"
+        "eng,110.0\n");
+
+    auto result = scan_csv(path)
+                      .group_by({"dept"})
+                      .aggregate({{"avg_sal", col("salary").mean()}})
+                      .collect();
+    assert(result.numRows() == 2);
+    auto names = result.columnNames();
+    assert(names.size() == 2);
+    assert(names[0] == "dept" && names[1] == "avg_sal");
+    std::cout << "OK\n";
+}
+
+void test13_lazy_join() {
+    std::cout << "test13_lazy_join ....... ";
+    const std::string left  = "/tmp/dfl_lazy_left.csv";
+    const std::string right = "/tmp/dfl_lazy_right.csv";
+    writeCsvFixture(left,
+        "id,name\n"
+        "1,Alice\n"
+        "2,Bob\n"
+        "3,Carol\n"
+        "4,Dan\n");
+    writeCsvFixture(right,
+        "id,score\n"
+        "2,82.0\n"
+        "4,88.0\n"
+        "5,70.0\n");
+
+    auto result = scan_csv(left).join(scan_csv(right), {"id"}, "inner").collect();
+    assert(result.numRows() == 2);
+    auto names = result.columnNames();
+    assert(names == (std::vector<std::string>{"id", "name", "score"}));
+    std::cout << "OK\n";
+}
+
+void test14_lazy_sort_head_parquet() {
+    std::cout << "test14_lazy_sort_head .. ";
+    // Build a parquet fixture via the eager writer so the test is
+    // self-contained (doesn't depend on an external .parquet file).
+    auto fixture = makeFrame({
+        {"id",    i32({1, 2, 3, 4, 5})},
+        {"score", f64({10.0, 90.0, 30.0, 70.0, 50.0})},
+    });
+    const std::string pq = "/tmp/dfl_lazy_scores.parquet";
+    fixture.write_parquet(pq);
+
+    auto result = scan_parquet(pq).sort({"score"}, /*ascending=*/false)
+                                   .head(3).collect();
+    assert(result.numRows() == 3);
+    // First row must be the highest score.
+    auto scores = asF64(column(result, "score"));
+    assert(std::abs(scores[0] - 90.0) < 1e-9);
+    assert((scores == std::vector<double>{90.0, 70.0, 50.0}));
+    std::cout << "OK\n";
+}
+
+void test15_lazy_sink_csv() {
+    std::cout << "test15_lazy_sink_csv ... ";
+    const std::string path = "/tmp/dfl_lazy_people.csv"; // reused from test10
+    const std::string out  = "/tmp/dfl_lazy_filtered.csv";
+    scan_csv(path)
+        .filter(col("age") > lit<int64_t>(20))
+        .sink_csv(out);
+
+    auto verify = read_csv(out);
+    assert(verify.numRows() == 4);
+    std::cout << "OK\n";
+}
+
 } // namespace
 
 int main() {
@@ -282,6 +424,12 @@ int main() {
         test7_null_propagation();
         test8_type_error();
         test9_string_and_agg();
+        test10_lazy_collect();
+        test11_lazy_explain();
+        test12_lazy_group_aggregate();
+        test13_lazy_join();
+        test14_lazy_sort_head_parquet();
+        test15_lazy_sink_csv();
     } catch (const std::exception& e) {
         std::cerr << "FAILED: " << e.what() << "\n";
         return 1;
