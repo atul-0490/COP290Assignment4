@@ -1,2 +1,0 @@
-/usr/bin/ar qc libdataframelib.a CMakeFiles/dataframelib.dir/src/expression.cpp.o CMakeFiles/dataframelib.dir/src/eager_dataframe.cpp.o CMakeFiles/dataframelib.dir/src/lazy_dataframe.cpp.o CMakeFiles/dataframelib.dir/src/query_optimizer.cpp.o
-/usr/bin/ranlib libdataframelib.a

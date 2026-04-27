@@ -218,13 +218,13 @@ simple comparison.
 
 \textbf{Examples.}
 
-\begin{tabular}{ll}
+{\small\begin{tabular}{ll}
   \texttt{x + lit(0)} & $\to$ \texttt{x} \\
   \texttt{x * lit(1)} & $\to$ \texttt{x} \\
   \texttt{x \& lit(true)} & $\to$ \texttt{x} \\
   \texttt{\textasciitilde{}\textasciitilde{}x} & $\to$ \texttt{x} \\
   \texttt{x == x} & $\to$ \texttt{lit(true)} \\
-\end{tabular}
+\end{tabular}}
 
 \textbf{Correctness.} Each is a well-known identity. We specifically exclude 
 null-unsafe rewrites: we do NOT rewrite \texttt{x - x → lit(0)} because 

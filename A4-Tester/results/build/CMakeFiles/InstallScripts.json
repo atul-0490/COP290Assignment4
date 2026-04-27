@@ -1,8 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/Users/abowtiekindofguy/Teaching/COP290/A4/tester/results/build/cmake_install.cmake",
-		"/Users/abowtiekindofguy/Teaching/COP290/A4/tester/results/build/student_build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
