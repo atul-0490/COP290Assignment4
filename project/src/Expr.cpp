@@ -2,9 +2,6 @@
 
 namespace dfl {
 
-// ---------------------------------------------------------------------------
-// Raw builders
-// ---------------------------------------------------------------------------
 
 std::shared_ptr<Expr> makeCol(const std::string& name) {
     auto node  = std::make_shared<ColExpr>();
@@ -12,17 +9,11 @@ std::shared_ptr<Expr> makeCol(const std::string& name) {
     return node;
 }
 
-// ---------------------------------------------------------------------------
-// ExprBuilder — thin fluent wrapper around a shared_ptr<Expr>.
-// Every chaining method constructs a new node so existing builders remain
-// valid and reusable.
-// ---------------------------------------------------------------------------
 
 ExprBuilder::ExprBuilder(std::shared_ptr<Expr> e) : node_(std::move(e)) {}
 
 std::shared_ptr<Expr> ExprBuilder::expr() const { return node_; }
 
-// ----- naming / unary -----
 
 ExprBuilder ExprBuilder::alias(const std::string& name) const {
     auto n   = std::make_shared<AliasExpr>();
@@ -43,7 +34,6 @@ ExprBuilder ExprBuilder::is_null()     const { return makeUnary(node_, UnaryExpr
 ExprBuilder ExprBuilder::is_not_null() const { return makeUnary(node_, UnaryExpr::Op::IS_NOT_NULL); }
 ExprBuilder ExprBuilder::operator~()   const { return makeUnary(node_, UnaryExpr::Op::NOT); }
 
-// ----- string functions -----
 
 static ExprBuilder makeStr(std::shared_ptr<Expr> child,
                            StringExpr::Func f,
@@ -62,7 +52,6 @@ ExprBuilder ExprBuilder::ends_with(const std::string& s)    const { return makeS
 ExprBuilder ExprBuilder::to_lower() const { return makeStr(node_, StringExpr::Func::TO_LOWER); }
 ExprBuilder ExprBuilder::to_upper() const { return makeStr(node_, StringExpr::Func::TO_UPPER); }
 
-// ----- aggregations -----
 
 static ExprBuilder makeAgg(std::shared_ptr<Expr> child, AggExpr::Func f) {
     auto n   = std::make_shared<AggExpr>();
@@ -77,7 +66,6 @@ ExprBuilder ExprBuilder::count() const { return makeAgg(node_, AggExpr::Func::CO
 ExprBuilder ExprBuilder::min()   const { return makeAgg(node_, AggExpr::Func::MIN); }
 ExprBuilder ExprBuilder::max()   const { return makeAgg(node_, AggExpr::Func::MAX); }
 
-// ----- arithmetic / comparison / boolean -----
 
 static ExprBuilder makeBin(std::shared_ptr<Expr> l,
                            std::shared_ptr<Expr> r,
@@ -105,12 +93,9 @@ ExprBuilder ExprBuilder::operator>=(const ExprBuilder& rhs) const { return makeB
 ExprBuilder ExprBuilder::operator&(const ExprBuilder& rhs) const { return makeBin(node_, rhs.node_, BinaryExpr::Op::AND); }
 ExprBuilder ExprBuilder::operator|(const ExprBuilder& rhs) const { return makeBin(node_, rhs.node_, BinaryExpr::Op::OR);  }
 
-// ---------------------------------------------------------------------------
-// Top-level builder
-// ---------------------------------------------------------------------------
 
 ExprBuilder col(const std::string& name) {
     return ExprBuilder(makeCol(name));
 }
 
-} // namespace dfl
+} 

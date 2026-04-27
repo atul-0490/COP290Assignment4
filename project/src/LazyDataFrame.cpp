@@ -1,6 +1,7 @@
 #include "LazyDataFrame.hpp"
 
 #include <chrono>
+#include <cctype>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -14,9 +15,6 @@
 
 namespace dfl {
 
-// ---------------------------------------------------------------------------
-// Construction
-// ---------------------------------------------------------------------------
 
 LazyDataFrame::LazyDataFrame() : plan_(nullptr) {}
 
@@ -25,14 +23,9 @@ LazyDataFrame::LazyDataFrame(std::shared_ptr<LogicalNode> plan)
 
 std::shared_ptr<LogicalNode> LazyDataFrame::plan() const { return plan_; }
 
-// ---------------------------------------------------------------------------
-// Plan-construction helpers
-// ---------------------------------------------------------------------------
 
 namespace {
 
-/// Thin helper that wires a fresh node above the existing plan as its child
-/// and returns a new LazyDataFrame. Keeps the builder methods one-liners.
 template <typename NodeT>
 LazyDataFrame extend(std::shared_ptr<LogicalNode> parent,
                      std::shared_ptr<NodeT> node) {
@@ -44,11 +37,8 @@ LazyDataFrame extend(std::shared_ptr<LogicalNode> parent,
     return LazyDataFrame(node);
 }
 
-} // namespace
+} 
 
-// ---------------------------------------------------------------------------
-// Plan-building operations — each extends the DAG, nothing is executed yet.
-// ---------------------------------------------------------------------------
 
 LazyDataFrame LazyDataFrame::select(const std::vector<std::string>& columns) const {
     auto node = std::make_shared<SelectNode>();
@@ -94,6 +84,42 @@ LazyDataFrame LazyDataFrame::aggregate(
     return extend(plan_, node);
 }
 
+LazyDataFrame LazyDataFrame::aggregate(
+    const std::vector<std::pair<std::string, std::string>>& aggs) const {
+    std::map<std::string, ExprBuilder> agg_map;
+
+    for (const auto& [col_name, fn_name_raw] : aggs) {
+        std::string fn_name = fn_name_raw;
+        std::transform(
+            fn_name.begin(), fn_name.end(), fn_name.begin(),
+            [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+
+        ExprBuilder expr;
+        if (fn_name == "sum") expr = col(col_name).sum();
+        else if (fn_name == "mean") expr = col(col_name).mean();
+        else if (fn_name == "count") expr = col(col_name).count();
+        else if (fn_name == "min") expr = col(col_name).min();
+        else if (fn_name == "max") expr = col(col_name).max();
+        else {
+            throw std::invalid_argument("aggregate: unsupported function '" + fn_name_raw + "'");
+        }
+
+        std::string out_name = col_name + "_" + fn_name;
+        if (agg_map.find(out_name) != agg_map.end()) {
+            int suffix = 2;
+            std::string candidate;
+            do {
+                candidate = out_name + "_" + std::to_string(suffix++);
+            } while (agg_map.find(candidate) != agg_map.end());
+            out_name = candidate;
+        }
+
+        agg_map.emplace(std::move(out_name), std::move(expr));
+    }
+
+    return aggregate(agg_map);
+}
+
 LazyDataFrame LazyDataFrame::join(const LazyDataFrame& other,
                                   const std::vector<std::string>& on,
                                   const std::string& how) const {
@@ -119,9 +145,6 @@ LazyDataFrame LazyDataFrame::head(int64_t n) const {
     return extend(plan_, node);
 }
 
-// ---------------------------------------------------------------------------
-// Sinks — build a SinkNode and immediately execute.
-// ---------------------------------------------------------------------------
 
 void LazyDataFrame::sink_csv(const std::string& path) const {
     collect().write_csv(path);
@@ -131,15 +154,11 @@ void LazyDataFrame::sink_parquet(const std::string& path) const {
     collect().write_parquet(path);
 }
 
-// ---------------------------------------------------------------------------
-// Physical execution — recursive walker that produces an EagerDataFrame.
-// ---------------------------------------------------------------------------
 
 namespace {
 
 EagerDataFrame executePlan(const std::shared_ptr<LogicalNode>& node);
 
-/// Ensure the plan has at least one child so we can pull `children[0]`.
 const std::shared_ptr<LogicalNode>& requireChild(const LogicalNode& n,
                                                  const std::string& ctx) {
     if (n.children.empty() || !n.children[0]) {
@@ -148,9 +167,6 @@ const std::shared_ptr<LogicalNode>& requireChild(const LogicalNode& n,
     return n.children[0];
 }
 
-/// Run a Scan leaf — the only place data actually enters the pipeline.
-/// Honours optimizer annotations: trim to projected_columns before returning
-/// rows, then apply any row_limit absorbed from a LimitNode.
 EagerDataFrame runScan(const ScanNode& s) {
     if (s.path.empty()) {
         throw std::runtime_error("Scan: empty path");
@@ -158,9 +174,6 @@ EagerDataFrame runScan(const ScanNode& s) {
     auto df = s.isParquet ? read_parquet(s.path) : read_csv(s.path);
 
     if (!s.projected_columns.empty()) {
-        // Only keep projected columns that actually exist in the source —
-        // silently drop missing ones so a stale projection annotation
-        // doesn't crash the run.
         std::vector<std::string> present;
         present.reserve(s.projected_columns.size());
         auto schema = df.table()->schema();
@@ -174,9 +187,6 @@ EagerDataFrame runScan(const ScanNode& s) {
     return df;
 }
 
-/// When an AggNode sits directly above a GroupByNode, we want a single
-/// `df.group_by(keys).aggregate(map)` call against the eager engine (which
-/// runs the grouping + aggregations together). Returns keys if found.
 const std::vector<std::string>* groupKeysAbove(const LogicalNode& child) {
     if (auto g = dynamic_cast<const GroupByNode*>(&child)) return &g->keys;
     return nullptr;
@@ -185,49 +195,34 @@ const std::vector<std::string>* groupKeysAbove(const LogicalNode& child) {
 EagerDataFrame executePlan(const std::shared_ptr<LogicalNode>& node) {
     if (!node) throw std::runtime_error("executePlan: null node");
 
-    // --- Leaf: Scan -------------------------------------------------------
     if (auto s = std::dynamic_pointer_cast<ScanNode>(node)) {
         return runScan(*s);
     }
 
-    // --- Filter -----------------------------------------------------------
     if (auto p = std::dynamic_pointer_cast<FilterNode>(node)) {
         auto child_df = executePlan(requireChild(*p, "Filter"));
         return child_df.filter(ExprBuilder(p->predicate));
     }
 
-    // --- Select -----------------------------------------------------------
     if (auto p = std::dynamic_pointer_cast<SelectNode>(node)) {
         auto child_df = executePlan(requireChild(*p, "Select"));
         return child_df.select(p->columns);
     }
 
-    // --- WithColumn -------------------------------------------------------
     if (auto p = std::dynamic_pointer_cast<WithColNode>(node)) {
         auto child_df = executePlan(requireChild(*p, "WithColumn"));
         return child_df.with_column(p->name, p->expr);
     }
 
-    // --- GroupBy (alone, no following Agg) --------------------------------
-    // Executing a bare GroupBy simply propagates the underlying table; the
-    // grouping keys only matter if an AggNode consumes them. We keep a
-    // parallel EagerDataFrame with group_keys_ set so that if someone
-    // collects a naked GroupByNode, they still get back their rows.
     if (auto p = std::dynamic_pointer_cast<GroupByNode>(node)) {
         auto child_df = executePlan(requireChild(*p, "GroupBy"));
         return child_df.group_by(p->keys);
     }
 
-    // --- Aggregate --------------------------------------------------------
-    // Two shapes are supported:
-    //   1. AggNode over GroupByNode → grouped aggregation.
-    //   2. AggNode over anything else → whole-frame aggregation.
     if (auto p = std::dynamic_pointer_cast<AggNode>(node)) {
         const auto& child = requireChild(*p, "Aggregate");
 
         if (const auto* keys = groupKeysAbove(*child)) {
-            // Skip re-executing the GroupByNode: just execute its child and
-            // re-apply group_by + aggregate in one shot.
             auto grand_child = executePlan(requireChild(*child, "Aggregate/GroupBy"));
             return grand_child.group_by(*keys).aggregate(p->aggMap);
         }
@@ -236,7 +231,6 @@ EagerDataFrame executePlan(const std::shared_ptr<LogicalNode>& node) {
         return child_df.aggregate(p->aggMap);
     }
 
-    // --- Join -------------------------------------------------------------
     if (auto p = std::dynamic_pointer_cast<JoinNode>(node)) {
         auto left_df  = executePlan(requireChild(*p, "Join"));
         if (!p->right) throw std::runtime_error("Join: missing right plan");
@@ -244,19 +238,16 @@ EagerDataFrame executePlan(const std::shared_ptr<LogicalNode>& node) {
         return left_df.join(right_df, p->on, p->how);
     }
 
-    // --- Sort -------------------------------------------------------------
     if (auto p = std::dynamic_pointer_cast<SortNode>(node)) {
         auto child_df = executePlan(requireChild(*p, "Sort"));
         return child_df.sort(p->columns, p->ascending);
     }
 
-    // --- Limit ------------------------------------------------------------
     if (auto p = std::dynamic_pointer_cast<LimitNode>(node)) {
         auto child_df = executePlan(requireChild(*p, "Limit"));
         return child_df.head(p->n);
     }
 
-    // --- Sink -------------------------------------------------------------
     if (auto p = std::dynamic_pointer_cast<SinkNode>(node)) {
         auto child_df = executePlan(requireChild(*p, "Sink"));
         if (p->isParquet) child_df.write_parquet(p->path);
@@ -267,7 +258,7 @@ EagerDataFrame executePlan(const std::shared_ptr<LogicalNode>& node) {
     throw std::runtime_error("executePlan: unknown node type");
 }
 
-} // namespace
+} 
 
 EagerDataFrame LazyDataFrame::collect() const {
     if (!plan_) return EagerDataFrame();
@@ -281,18 +272,9 @@ EagerDataFrame LazyDataFrame::collect_raw() const {
     return executePlan(plan_);
 }
 
-// ---------------------------------------------------------------------------
-// explain() — render the optimised plan DAG to a PNG via the `dot` CLI.
-// Non-fatal: if `dot` is unavailable, we fall back to preserving the DOT
-// source and printing a warning instead of crashing the user's program.
-// ---------------------------------------------------------------------------
 
 namespace {
 
-/// Tiny RAII guard for the intermediate .dot file we hand to Graphviz.
-/// When the `dot` rendering succeeds we unlink the temp; when it fails we
-/// keep the file around and surface its path to the user so they can
-/// reproduce the render manually (`dot -Tpng <path>`).
 struct TempDotFile {
     std::string path;
     bool        keep = false;
@@ -302,12 +284,11 @@ struct TempDotFile {
         if (!keep && !path.empty()) std::remove(path.c_str());
     }
 
-    // Non-copyable — we own a unique filesystem resource.
     TempDotFile(const TempDotFile&)            = delete;
     TempDotFile& operator=(const TempDotFile&) = delete;
 };
 
-} // namespace
+} 
 
 void LazyDataFrame::explain(const std::string& pngPath) const {
     QueryOptimizer opt;
@@ -323,7 +304,7 @@ void LazyDataFrame::explain(const std::string& pngPath) const {
         std::ofstream f(tmp.path);
         if (!f) {
             std::cerr << "Warning: explain() could not write " << tmp.path << "\n";
-            tmp.keep = true; // but there's nothing to keep — path will be gone
+            tmp.keep = true; 
             return;
         }
         f << dot;
@@ -339,4 +320,4 @@ void LazyDataFrame::explain(const std::string& pngPath) const {
     }
 }
 
-} // namespace dfl
+} 

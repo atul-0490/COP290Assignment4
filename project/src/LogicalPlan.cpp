@@ -7,9 +7,6 @@
 
 namespace dfl {
 
-// ---------------------------------------------------------------------------
-// Expression → human-readable string (used for DOT labels and debugging).
-// ---------------------------------------------------------------------------
 
 namespace {
 
@@ -58,8 +55,6 @@ const char* strFuncName(StringExpr::Func f) {
     return "?";
 }
 
-/// Render an Arrow Datum-wrapped scalar as printable text. Keeps this simple:
-/// strings are emitted with quotes, everything else uses Arrow's ToString.
 std::string scalarToString(const arrow::Datum& d) {
     if (!d.is_scalar() || d.scalar() == nullptr) return "?";
     const auto& s = d.scalar();
@@ -70,7 +65,7 @@ std::string scalarToString(const arrow::Datum& d) {
     return s->ToString();
 }
 
-} // namespace
+} 
 
 std::string exprToString(const std::shared_ptr<Expr>& e) {
     if (!e) return "?";
@@ -116,16 +111,9 @@ std::string exprToString(const std::shared_ptr<Expr>& e) {
     return "?";
 }
 
-// ---------------------------------------------------------------------------
-// Plan DAG → Graphviz DOT
-// ---------------------------------------------------------------------------
 
 namespace {
 
-/// Escape characters that would break DOT label syntax. We deliberately do
-/// NOT escape backslashes so that callers can embed Graphviz escape
-/// sequences like "\n" (line break) directly in labels. Real newlines and
-/// literal double-quotes still need fixing up.
 std::string dotEscape(const std::string& s) {
     std::string out;
     out.reserve(s.size());
@@ -148,7 +136,6 @@ std::string joinStrings(const std::vector<std::string>& xs, const std::string& s
     return out;
 }
 
-/// Describe (label, fill colour) for a single plan node.
 std::pair<std::string, std::string> nodeAppearance(const LogicalNode& n) {
     if (auto p = dynamic_cast<const ScanNode*>(&n)) {
         return { "Scan\\n" + p->path + (p->isParquet ? " [parquet]" : " [csv]"),
@@ -197,8 +184,6 @@ std::pair<std::string, std::string> nodeAppearance(const LogicalNode& n) {
     return { "Unknown", "white" };
 }
 
-/// Assign an integer ID to every distinct node pointer reachable from `root`.
-/// Shared subplans intentionally collapse to a single node.
 class IdAssigner {
 public:
     int idOf(const LogicalNode* n) {
@@ -232,15 +217,12 @@ void walk(const std::shared_ptr<LogicalNode>& node,
               << "\", style=filled, fillcolor=" << color
               << ", shape=box];\n";
 
-    // Children (regular dependencies).
     for (const auto& child : node->children) {
         if (!child) continue;
         walk(child, ids, nodes_out, edges_out, emitted);
         edges_out << "  n" << ids.idOf(child.get()) << " -> n" << id << ";\n";
     }
 
-    // JoinNode carries its right side as a separate pointer (not in children)
-    // so we render it with a distinct edge label.
     if (auto jn = std::dynamic_pointer_cast<JoinNode>(node)) {
         if (jn->right) {
             walk(jn->right, ids, nodes_out, edges_out, emitted);
@@ -250,7 +232,7 @@ void walk(const std::shared_ptr<LogicalNode>& node,
     }
 }
 
-} // namespace
+} 
 
 std::string renderDotGraph(const std::shared_ptr<LogicalNode>& root) {
     std::ostringstream out;
@@ -272,4 +254,4 @@ std::string renderDotGraph(const std::shared_ptr<LogicalNode>& root) {
     return out.str();
 }
 
-} // namespace dfl
+} 

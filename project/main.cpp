@@ -14,9 +14,6 @@ using dfl::lit;
 
 namespace {
 
-// Helper: build an Arrow table with { id: int32, name: string, score: float64 }
-// using small in-memory data. Fails fast via abort() on builder errors — this
-// is demo code, not a test harness.
 std::shared_ptr<arrow::Table> makeDemoTable() {
     arrow::Int32Builder  id_builder;
     arrow::StringBuilder name_builder;
@@ -44,7 +41,7 @@ std::shared_ptr<arrow::Table> makeDemoTable() {
     return arrow::Table::Make(schema, {id_arr, name_arr, score_arr});
 }
 
-} // namespace
+} 
 
 int main() {
     auto table = makeDemoTable();

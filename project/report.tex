@@ -1,0 +1,569 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+  11pt,
+]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\usepackage[margin=1in]{geometry}
+\usepackage{longtable,booktabs,array}
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\ifLuaTeX
+  \usepackage{selnolig}  % disable illegal ligatures
+\fi
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={DataFrameLib --- Design Document},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\title{DataFrameLib --- Design Document}
+\usepackage{etoolbox}
+\makeatletter
+\providecommand{\subtitle}[1]{% add subtitle to \maketitle
+  \apptocmd{\@title}{\par {\large #1 \par}}{}{}
+}
+\makeatother
+\subtitle{COP290 --- Assignment 4}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\hypertarget{dataframelib-design-document}{%
+\section{DataFrameLib --- Design
+Document}\label{dataframelib-design-document}}
+
+\hypertarget{architecture-overview}{%
+\subsection{1. Architecture Overview}\label{architecture-overview}}
+
+DataFrameLib is organised as three cooperating layers on top of the
+Apache Arrow C++ runtime.
+
+\begin{itemize}
+\item
+  \textbf{EagerDataFrame} is the concrete, Pandas-style API. It holds a
+  single \texttt{std::shared\_ptr\textless{}arrow::Table\textgreater{}}
+  and implements every operator (\texttt{filter}, \texttt{select},
+  \texttt{with\_column}, \texttt{group\_by}, \texttt{aggregate},
+  \texttt{join}, \texttt{sort}, \texttt{head}, I/O) by running Arrow
+  compute kernels directly. The API is immutable: every operator returns
+  a new \texttt{EagerDataFrame} that shares the underlying table
+  wherever possible.
+\item
+  \textbf{LazyDataFrame} exposes the \emph{same} operator surface but
+  defers execution. Each operator allocates one \texttt{LogicalNode} and
+  returns a new \texttt{LazyDataFrame} whose plan extends the parent's.
+  The plan is a directed acyclic graph of
+  \texttt{shared\_ptr\textless{}LogicalNode\textgreater{}}s --- because
+  operations are pure, subtrees may be shared across multiple lazy
+  frames without issue.
+\item
+  \textbf{QueryOptimizer} takes a plan root and rewrites it to a fixed
+  point. It runs each of five rules, normalises the output with a
+  structural \texttt{planEquals} check, and stops when the plan stops
+  changing (or a safety cap of 10 iterations is hit). The rewritten plan
+  is then handed to a DFS executor that produces an
+  \texttt{EagerDataFrame}.
+\end{itemize}
+
+The \textbf{expression system} is a small class hierarchy rooted at
+\texttt{Expr}: \texttt{ColExpr}, \texttt{LitExpr}, \texttt{AliasExpr},
+\texttt{BinaryExpr}, \texttt{UnaryExpr}, \texttt{AggExpr},
+\texttt{StringExpr}. Users never touch \texttt{Expr} directly --- they
+use the operator-overloading \texttt{ExprBuilder} and the top-level
+\texttt{col(name)} / \texttt{lit(value)} functions. Both execution modes
+share the same evaluator (\texttt{EagerDataFrame::evalExpr}), which
+lowers each node onto Arrow Compute. Sharing the evaluator is what makes
+constant folding trivial: the optimiser simply evaluates any
+fully-constant sub-expression against a synthetic 1-row table.
+
+Two execution modes, one operator surface, one evaluator, one plan
+representation --- this keeps the library small (\textless{} 3000 LOC)
+while supporting both imperative and declarative workflows.
+
+\hypertarget{apache-arrow-integration}{%
+\subsection{2. Apache Arrow
+Integration}\label{apache-arrow-integration}}
+
+Arrow is the physical backbone of every column in the library. Three
+properties drove the choice:
+
+\begin{itemize}
+\item
+  \textbf{Columnar layout.} Each column is an
+  \texttt{arrow::ChunkedArray} whose chunks are contiguous primitive or
+  Utf8 buffers. Vectorised compute (sum, equals, greater-than, \ldots)
+  benefits from excellent cache locality and auto-vectorisation in the
+  Arrow kernels, which would be impractical to reimplement by hand.
+\item
+  \textbf{Zero-copy sharing.} Because an \texttt{arrow::Table} is
+  immutable and reference-counted, our \texttt{EagerDataFrame} copy is
+  an atomic pointer copy. \texttt{head}, \texttt{select}, and
+  \texttt{filter} produce new tables but share unchanged buffers with
+  their parents.
+\item
+  \textbf{Type safety.} Arrow's \texttt{DataType} hierarchy is mapped
+  1:1 onto our \texttt{ColType} enum via \texttt{arrowTypeToColType}.
+  Unsupported Arrow types are rejected at load time --- the library will
+  never silently coerce \texttt{decimal128} or \texttt{date32} into a
+  numeric column.
+\end{itemize}
+
+Null handling is inherited verbatim. Every Arrow kernel already
+propagates nulls in the way SQL expects (\texttt{NULL\ +\ 1\ =\ NULL},
+\texttt{NULL\ \textgreater{}\ 5\ =\ NULL} which is dropped by filter,
+\ldots) --- by composing kernels we get null-safety ``for free''.
+
+I/O goes through \texttt{arrow::csv::TableReader} and
+\texttt{parquet::arrow::*}. Reading uses
+\texttt{arrow::io::ReadableFile::Open} whose handle is owned by the
+reader object, so closing is automatic on scope exit. Writing is the
+symmetric pair (\texttt{arrow::csv::MakeCSVWriter},
+\texttt{parquet::arrow::WriteTable}).
+
+\hypertarget{type-system}{%
+\subsection{3. Type System}\label{type-system}}
+
+\texttt{ColType} (in \texttt{TypeUtils.hpp}) is the library's view of a
+column's type: \texttt{INT32}, \texttt{INT64}, \texttt{FLOAT32},
+\texttt{FLOAT64}, \texttt{STRING}, \texttt{BOOLEAN}. Every Arrow column
+is translated to exactly one of these values once at load time and never
+changes afterwards.
+
+\textbf{Promotion rules} (\texttt{promoteTypes}):
+
+\begin{itemize}
+\tightlist
+\item
+  Identical types → same type.
+\item
+  Integer + integer → widest integer (INT32 + INT64 → INT64).
+\item
+  Any integer + any float → widest float (mixing a FLOAT32 with an INT64
+  promotes to FLOAT64 for precision).
+\item
+  Any mix of numeric with STRING or BOOLEAN →
+  \texttt{std::invalid\_argument} whose message includes both colliding
+  type names (\texttt{"Incompatible\ types:\ string\ and\ int32"}).
+\end{itemize}
+
+The type check happens inside \texttt{evalExpr} for binary operators,
+which catches errors at evaluation time (\texttt{col("s")\ +\ col("i")}
+throws on \texttt{collect()} / \texttt{filter()} / etc.). Unary
+operators have similar guards (\texttt{NOT} requires boolean,
+\texttt{abs} requires numeric, the string functions require STRING).
+
+\hypertarget{lazy-execution-and-the-dag}{%
+\subsection{4. Lazy Execution and the
+DAG}\label{lazy-execution-and-the-dag}}
+
+A lazy plan is a DAG of \texttt{LogicalNode}s with a single root. The
+node types are:
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule\noalign{}
+Node & Role \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{ScanNode} & Leaf --- reads CSV or Parquet. Carries \\
+& \texttt{projected\_columns} and \texttt{row\_limit} \\
+& annotations written by the optimiser. \\
+\texttt{FilterNode} & \texttt{WHERE\ predicate}. \\
+\texttt{SelectNode} & \texttt{SELECT\ expr,\ expr,\ …}. \\
+\texttt{WithColNode} & Adds / overwrites one column. \\
+\texttt{GroupByNode} & Declares group keys (paired with AggNode). \\
+\texttt{AggNode} & Computes aggregations (per group). \\
+\texttt{JoinNode} & Equi-join; carries \texttt{right}, \texttt{on},
+\texttt{how}. \\
+\texttt{SortNode} & Orders rows by \texttt{columns}. \\
+\texttt{LimitNode} & Keeps the first \texttt{n} rows. \\
+\texttt{SinkNode} & Terminal write (CSV or Parquet). \\
+\end{longtable}
+
+\texttt{collect()} runs \texttt{QueryOptimizer::optimize(plan\_)} and
+then a recursive DFS executor (\texttt{executePlan}) that materialises
+each node's children first, then applies the node's operator to its
+child frames. The execution path is a straight call into the
+\texttt{EagerDataFrame} operator of the same name --- this is how the
+library shares implementation between the two execution modes.
+
+\texttt{explain(pngPath)} emits the plan as Graphviz DOT, writes it to a
+temp file inside a small RAII guard (\texttt{TempDotFile}), and shells
+out to \texttt{dot\ -Tpng}. If \texttt{dot} is not installed the RAII
+guard keeps the \texttt{.dot} file and stderr prints its path, so the
+user can render the diagram by hand without the call having side-effects
+beyond one stray file.
+
+\hypertarget{query-optimizations}{%
+\subsection{5. Query Optimizations}\label{query-optimizations}}
+
+The optimiser is a fixed-point rewriter (\texttt{optimize}): it calls
+each rule in turn, checks structural plan equality (\texttt{planEquals})
+against the previous iteration, and stops when nothing changed (or 10
+iterations elapse). Rules cannot loop forever because each one is
+individually idempotent once it has fully applied --- a property we
+verify by test (test 28).
+
+\hypertarget{constant-folding}{%
+\subsubsection{5.1 --- Constant Folding}\label{constant-folding}}
+
+\textbf{Description.} Any sub-expression composed entirely of
+\texttt{LitExpr} nodes is evaluated at plan-construction time and
+replaced with a single \texttt{LitExpr} holding the result.
+
+\textbf{Transformation.} If \texttt{e} has no \texttt{ColExpr}
+descendant, rewrite it to \texttt{lit(evalExpr(e))}.
+
+\textbf{Correctness proof.} \texttt{evalExpr} on an expression with no
+column references produces the same Arrow scalar as running the kernel
+at execution time on any row --- column-free expressions are row-
+independent. Replacing the expression with that scalar preserves
+results.
+
+\textbf{Concrete example.}
+
+\begin{verbatim}
+Before: filter(col("age") > (lit(20) + lit(10)))
+After:  filter(col("age") > lit(30))
+\end{verbatim}
+
+\textbf{Performance benefit.} One addition per row eliminated; the
+optimised predicate is a single comparison.
+
+\hypertarget{expression-simplification}{%
+\subsubsection{5.2 --- Expression
+Simplification}\label{expression-simplification}}
+
+\textbf{Description.} Rewrite algebraic identities that do not change
+the value of an expression.
+
+\textbf{Transformation.} Representative rewrites (all null-safe):
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule\noalign{}
+Before & After \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{x\ +\ lit(0)} / \texttt{lit(0)\ +\ x} & \texttt{x} \\
+\texttt{x\ -\ lit(0)} & \texttt{x} \\
+\texttt{x\ *\ lit(1)} / \texttt{lit(1)\ *\ x} & \texttt{x} \\
+\texttt{x\ /\ lit(1)} & \texttt{x} \\
+\texttt{x\ *\ lit(0)} / \texttt{lit(0)\ *\ x} & \texttt{lit(0)} \\
+\texttt{x\ AND\ lit(true)} & \texttt{x} \\
+\texttt{x\ AND\ lit(false)} & \texttt{lit(false)} \\
+\texttt{x\ OR\ lit(true)} & \texttt{lit(true)} \\
+\texttt{\textasciitilde{}\textasciitilde{}x} & \texttt{x} \\
+\texttt{x\ ==\ x} & \texttt{lit(true)} \\
+\end{longtable}
+
+\textbf{Correctness proof.} Each pattern is a well-known ring / Boolean
+identity. The null-unsafe rewrites are specifically excluded: we do
+\emph{not} rewrite \texttt{x\ -\ x\ →\ lit(0)} because
+\texttt{NULL\ -\ NULL} is \texttt{NULL}, not \texttt{0}.
+
+\textbf{Concrete example.}
+
+\begin{verbatim}
+Before: select(col("id") * lit(1), col("x") + lit(0))
+After:  select(col("id"), col("x"))
+\end{verbatim}
+
+\textbf{Performance benefit.} Fewer compute-kernel invocations. On a
+5M-row table each removed identity saves one \texttt{Multiply} or
+\texttt{Add} call.
+
+\hypertarget{predicate-pushdown}{%
+\subsubsection{5.3 --- Predicate Pushdown}\label{predicate-pushdown}}
+
+\textbf{Description.} Move a \texttt{FilterNode} as close to its source
+as possible. Two cases are handled: through a \texttt{JoinNode} (when
+the predicate references only one side) and through a
+\texttt{GroupByNode} (when the predicate only references grouping keys).
+
+\textbf{Transformation.} If \texttt{pred} uses only columns of
+\texttt{left} in \texttt{Filter(Join(left,\ right,\ on,\ how),\ pred)}:
+
+\begin{verbatim}
+Before:  Filter(Join(left, right), pred)
+After:   Join(Filter(left, pred), right)
+\end{verbatim}
+
+(Analogous for right-side predicates on inner joins; outer joins only
+allow pushdown on the preserved side.)
+
+For \texttt{Filter(GroupBy(k,\ child),\ pred)} where
+\texttt{colRefs(pred)\ ⊆\ k}:
+
+\begin{verbatim}
+Before:  Filter(GroupBy(k, child), pred)
+After:   GroupBy(k, Filter(child, pred))
+\end{verbatim}
+
+\textbf{Correctness proof.} A row is kept by the outer filter iff
+\texttt{pred} is true for the produced row. For an inner join on
+\texttt{on}, a row on the left that fails \texttt{pred} cannot
+participate in any produced row (because \texttt{pred} only depends on
+left columns), so dropping it below the join changes nothing. For
+\texttt{GroupBy} on keys \texttt{k}: rows in the same group share the
+same values for \texttt{k}, so a predicate restricted to \texttt{k} is
+constant within a group --- either all rows in the group pass or none
+do, and moving the test above or below the grouping is equivalent.
+
+\textbf{Concrete example.}
+
+\begin{verbatim}
+Before: scan(sales) ⨝ scan(stores)   → filter(store_size > 100)
+After:  scan(sales) ⨝ (scan(stores) → filter(store_size > 100))
+\end{verbatim}
+
+\textbf{Performance benefit.} The right side of the join shrinks
+\emph{before} the join builds its hash table, which for selective
+filters can halve or quarter intermediate sizes.
+
+\hypertarget{projection-pushdown}{%
+\subsubsection{5.4 --- Projection Pushdown}\label{projection-pushdown}}
+
+\textbf{Description.} Propagate the set of columns ultimately required
+at the sink downward through the plan. At \texttt{ScanNode}, write the
+intersection (with the file's real schema) into
+\texttt{ScanNode::projected\_columns}, so the reader only materialises
+those columns.
+
+\textbf{Transformation.} Top-down traversal with a required-set
+\texttt{R:\ optional\textless{}set\textless{}string\textgreater{}\textgreater{}}:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{Sink\ /\ head\ /\ sort}: \texttt{R} unchanged.
+\item
+  \texttt{SelectNode(exprs)}: replace \texttt{R} with
+  \texttt{colRefs(exprs)}.
+\item
+  \texttt{FilterNode(pred)}: \texttt{R\ :=\ R\ ∪\ colRefs(pred)}.
+\item
+  \texttt{WithColNode(name,expr)}:
+  \texttt{R\ :=\ (R\ \textbackslash{}\ \{name\})\ ∪\ colRefs(expr)}.
+\item
+  \texttt{GroupByNode\ +\ AggNode}:
+  \texttt{R\ :=\ keys\ ∪\ colRefs(aggregations)}.
+\item
+  \texttt{JoinNode(on,\ left,\ right)}: split \texttt{R} into
+  \texttt{R\_left\ ∪\ on} and \texttt{R\_right\ ∪\ on}, descend into
+  each side.
+\item
+  \texttt{ScanNode}: record
+  \texttt{projected\_columns\ =\ R\ ∩\ file\_schema}.
+\end{itemize}
+
+\textbf{Correctness proof.} Every node in the plan outputs a subset of
+some set of columns. The transformation only ever \emph{drops} columns
+that are never referenced upstream of the scan; dropping unused columns
+cannot change the result of a relational operator.
+
+\textbf{Concrete example.}
+
+\begin{verbatim}
+sales.csv has 12 columns. Query only needs (id, amount).
+Before: scan(sales) → select(id, amount)
+After:  scan(sales, projected={id, amount}) → select(id, amount)
+\end{verbatim}
+
+\textbf{Performance benefit.} For a 12-column Parquet file this reads
+2/12 ≈ 17\% of the bytes. Even for CSV, converting 10 unused columns per
+row to Arrow arrays is skipped.
+
+\hypertarget{limit-pushdown}{%
+\subsubsection{5.5 --- Limit Pushdown}\label{limit-pushdown}}
+
+\textbf{Description.} Move \texttt{LimitNode(n)} below every operator
+that preserves row count and order. In particular, \texttt{LimitNode} is
+swapped below \texttt{SelectNode} and \texttt{WithColNode}, and absorbed
+into \texttt{ScanNode::row\_limit} when it reaches a scan.
+
+\textbf{Transformation.}
+
+\begin{verbatim}
+LimitNode(n, SelectNode(s,  child))  →  SelectNode(s,  LimitNode(n, child))
+LimitNode(n, WithColNode(w, child))  →  WithColNode(w, LimitNode(n, child))
+LimitNode(n, ScanNode(path,...))     →  ScanNode(path, ..., row_limit=n)
+\end{verbatim}
+
+Does \emph{not} push below \texttt{FilterNode}, \texttt{JoinNode},
+\texttt{SortNode}, \texttt{GroupByNode}, \texttt{AggNode} (these change
+row count / order).
+
+\textbf{Correctness proof.} \texttt{SelectNode} and \texttt{WithColNode}
+are per-row transformations --- they neither add, remove, nor reorder
+rows. \texttt{select(head(x,\ n))\ =\ head(select(x),\ n)} because both
+evaluate the select on the same set of n rows in the same order. For
+\texttt{ScanNode}, reading only the first \texttt{n} rows of the source
+file is exactly what the unoptimised \texttt{LimitNode} would produce.
+
+\textbf{Concrete example.}
+
+\begin{verbatim}
+Before: scan(big.csv) → with_column(c, a+b) → head(5)
+After:  scan(big.csv, row_limit=5) → with_column(c, a+b)
+\end{verbatim}
+
+\textbf{Performance benefit.} On a 10M-row Parquet file taking
+\texttt{head(5)} now reads only the first row group. In CSV mode we stop
+reading after \texttt{n} lines. The \texttt{with\_column} compute also
+runs on 5 rows instead of 10M.
+
+\hypertarget{memory-management}{%
+\subsection{6. Memory Management}\label{memory-management}}
+
+Every heap allocation in the library is owned by a smart pointer:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{std::shared\_ptr\textless{}T\textgreater{}} for values that
+  may have multiple owners: \texttt{arrow::Table},
+  \texttt{arrow::ChunkedArray}, \texttt{LogicalNode}, \texttt{Expr}.
+\item
+  \texttt{std::unique\_ptr\textless{}T\textgreater{}} for
+  exclusively-owned Arrow readers / writers inside the I/O code.
+\item
+  \texttt{std::string} / \texttt{std::vector} everywhere for owning byte
+  / array data --- no \texttt{char*} escape hatches.
+\end{itemize}
+
+\texttt{EagerDataFrame} and \texttt{LazyDataFrame} are both ``small
+handle'' types: the only data member is one \texttt{shared\_ptr}, so
+copies are \texttt{atomic\_fetch\_add(1)} on a refcount and moves are a
+pointer swap. Both classes have the full defaulted rule-of-5
+(\texttt{=\ default}) plus \texttt{noexcept} move operators.
+
+Arrow file handles are never manually closed. Readers returned by
+\texttt{arrow::io::ReadableFile::Open} are owned by reader objects whose
+destructors close them --- RAII all the way.
+
+The only filesystem resource we create directly is the intermediate
+\texttt{.dot} file in \texttt{explain()}. This is wrapped in a local
+\texttt{TempDotFile} struct whose destructor deletes the file unless a
+\texttt{keep} flag is set (e.g.~when \texttt{dot} is missing and we want
+the user to see the path). \texttt{TempDotFile} is non-copyable to
+prevent double-delete.
+
+\textbf{Exception safety.} Every Arrow API call that returns
+\texttt{arrow::Status} /
+\texttt{arrow::Result\textless{}T\textgreater{}} is checked; failures
+are converted to \texttt{std::runtime\_error(status.ToString())}. Input
+validation throws \texttt{std::invalid\_argument} with a descriptive
+message (missing column name, unknown join mode, non-boolean predicate,
+\ldots). Because all owning state is held by smart pointers and standard
+containers, unwinding is leak-free.
+
+The test suite is run under \texttt{-fsanitize=address,undefined} with
+\texttt{detect\_leaks=1}; the complete 31-test run reports zero leaks
+and zero UBSan errors.
+
+\hypertarget{testing}{%
+\subsection{7. Testing}\label{testing}}
+
+The test binary \texttt{tests/test\_main} contains 31 tests divided into
+five categories:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \textbf{Schema \& eager operators} (tests 1--10): \texttt{read\_csv},
+  \texttt{from\_columns}, \texttt{select}, \texttt{filter},
+  \texttt{with\_column}, \texttt{group\_by\ +\ \ \ \ aggregate},
+  \texttt{join}, \texttt{sort}, \texttt{head}, \texttt{write\_csv}.
+\item
+  \textbf{Expression \& type system} (tests 11--13): arithmetic
+  promotion, null handling, string functions, incompatible-type
+  detection.
+\item
+  \textbf{Lazy execution} (tests 14--15): plan construction,
+  \texttt{collect()}, \texttt{explain()}, parity between eager and lazy
+  pipelines.
+\item
+  \textbf{Optimiser} (tests 16--20): one test per rule plus a benchmark.
+  Each optimiser test asserts both \emph{structural} correctness
+  (inspect the optimised plan) and \emph{semantic} correctness
+  (\texttt{collect()\ ==\ collect\_raw()}).
+\item
+  \textbf{Edge cases} (tests 21--31): empty frames, single-row
+  aggregations, all-null columns, 10 000-row string columns, chained
+  filters, multi-key joins, 8-operation lazy plans, parquet round-trip,
+  optimiser idempotency, out-of-range \texttt{head}, and
+  \texttt{std::invalid\_argument} on string+int arithmetic.
+\end{enumerate}
+
+\hypertarget{benchmark-methodology}{%
+\subsubsection{Benchmark methodology}\label{benchmark-methodology}}
+
+The optimiser benchmark (test 20) builds two 20 000-row CSV files and a
+four-operator pipeline
+(\texttt{scan\ →\ join\ →\ filter\ →\ select\ →\ head}). It measures
+\texttt{collect\_raw()} (no optimiser) vs \texttt{collect()} (optimiser
+on) using a \texttt{minTimeMs} helper that runs 3 warm-up iterations
+followed by 5 timed iterations and reports the minimum --- the minimum
+is a much more stable metric than the mean for short measurements. The
+test asserts the optimised run is at least 10 \% faster; in practice the
+speedup is \textasciitilde2×.
+
+Memory safety is verified by recompiling the suite with
+\texttt{-fsanitize=address,undefined} and
+\texttt{ASAN\_OPTIONS=detect\_leaks=1}, which reports no errors and no
+leaks across all 31 tests.
+
+\end{document}

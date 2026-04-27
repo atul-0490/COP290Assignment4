@@ -17,25 +17,17 @@
 #include <parquet/arrow/reader.h>
 #endif
 
-#include "EagerDataFrame.hpp"  // for constant-folding evaluation
+#include "EagerDataFrame.hpp"  
 #include "LogicalPlan.hpp"
 
 namespace dfl {
 
-// ===========================================================================
-// Shared expression / plan utilities
-// ===========================================================================
 
 namespace {
 
-// ---------------------------------------------------------------------------
-// Structural Expr equality. Required by expression simplification (x - x → 0,
-// x == x → true) and for idempotency checks.
-// ---------------------------------------------------------------------------
 
 bool exprEquals(const std::shared_ptr<Expr>& a, const std::shared_ptr<Expr>& b);
 
-/// Two Datum scalars compare equal iff both hold the same Arrow scalar value.
 bool datumEquals(const arrow::Datum& a, const arrow::Datum& b) {
     if (!a.is_scalar() || !b.is_scalar()) return false;
     const auto& sa = a.scalar();
@@ -82,11 +74,6 @@ bool exprEquals(const std::shared_ptr<Expr>& a, const std::shared_ptr<Expr>& b) 
     return false;
 }
 
-// ---------------------------------------------------------------------------
-// Collect the set of ColExpr names referenced anywhere in an expression.
-// Used by predicate pushdown (to decide which side of a join a filter fits)
-// and by projection pushdown (to know what columns a plan node consumes).
-// ---------------------------------------------------------------------------
 
 void collectColRefs(const std::shared_ptr<Expr>& e, std::set<std::string>& out) {
     if (!e) return;
@@ -109,7 +96,6 @@ std::set<std::string> colRefs(const std::shared_ptr<Expr>& e) {
     return s;
 }
 
-/// Pure-literal expression: contains no ColExpr / AggExpr.
 bool isConstant(const std::shared_ptr<Expr>& e) {
     if (!e) return false;
     if (std::dynamic_pointer_cast<ColExpr>(e)) return false;
@@ -122,10 +108,6 @@ bool isConstant(const std::shared_ptr<Expr>& e) {
     return false;
 }
 
-// ---------------------------------------------------------------------------
-// Literal helpers — quick predicates for recognising specific scalar values
-// in algebraic simplifications.
-// ---------------------------------------------------------------------------
 
 std::shared_ptr<arrow::Scalar> litScalar(const std::shared_ptr<Expr>& e) {
     auto l = std::dynamic_pointer_cast<LitExpr>(e);
@@ -161,8 +143,6 @@ bool litIsFalse(const std::shared_ptr<Expr>& e) {
     return !std::static_pointer_cast<arrow::BooleanScalar>(s)->value;
 }
 
-/// Build a `lit(v)` Expr node directly from an arrow::Scalar (used by the
-/// constant folder to stash the result of `lit(3)+lit(4)`).
 std::shared_ptr<Expr> makeLitFromScalar(const std::shared_ptr<arrow::Scalar>& s) {
     auto node = std::make_shared<LitExpr>();
     node->value = arrow::Datum(s);
@@ -170,7 +150,6 @@ std::shared_ptr<Expr> makeLitFromScalar(const std::shared_ptr<arrow::Scalar>& s)
     return node;
 }
 
-/// Build a boolean literal directly (no templates, no type inference).
 std::shared_ptr<Expr> makeBoolLit(bool v) {
     auto node = std::make_shared<LitExpr>();
     node->type  = ColType::BOOLEAN;
@@ -178,7 +157,6 @@ std::shared_ptr<Expr> makeBoolLit(bool v) {
     return node;
 }
 
-/// Build an int32 literal.
 std::shared_ptr<Expr> makeIntLit(int32_t v) {
     auto node = std::make_shared<LitExpr>();
     node->type  = ColType::INT32;
@@ -186,14 +164,7 @@ std::shared_ptr<Expr> makeIntLit(int32_t v) {
     return node;
 }
 
-// ---------------------------------------------------------------------------
-// Schema inference — answers "what columns does this subtree output?".
-// Used by predicate pushdown to decide which side of a Join a predicate
-// belongs to. We cache per ScanNode pointer so we don't reread a file on
-// every optimizer iteration.
-// ---------------------------------------------------------------------------
 
-/// Parse a CSV header line naively (no quote handling needed for our tests).
 std::set<std::string> readCsvHeader(const std::string& path) {
     std::set<std::string> out;
     std::ifstream f(path);
@@ -211,8 +182,6 @@ std::set<std::string> readCsvHeader(const std::string& path) {
     return out;
 }
 
-/// Read a Parquet schema via Arrow's reader API. Returns empty on any error
-/// so the optimiser degrades gracefully when a file is missing.
 std::set<std::string> readParquetColumns(const std::string& path) {
     std::set<std::string> out;
 #ifdef DFL_HAVE_PARQUET
@@ -240,8 +209,6 @@ std::set<std::string> scanOutputColumns(const ScanNode& s) {
     return cols;
 }
 
-/// Compute the set of column names a plan subtree produces. Returns nullopt
-/// when we cannot infer it (e.g. the underlying file could not be opened).
 std::optional<std::set<std::string>> outputColumns(
     const std::shared_ptr<LogicalNode>& node) {
     if (!node) return std::nullopt;
@@ -249,8 +216,6 @@ std::optional<std::set<std::string>> outputColumns(
     if (auto s = std::dynamic_pointer_cast<ScanNode>(node)) {
         auto cols = scanOutputColumns(*s);
         if (cols.empty()) return std::nullopt;
-        // If a projection has already been applied, the scan will emit only
-        // those columns (restricted to what actually exists in the file).
         if (!s->projected_columns.empty()) {
             std::set<std::string> trimmed;
             for (const auto& c : s->projected_columns) {
@@ -262,7 +227,6 @@ std::optional<std::set<std::string>> outputColumns(
     }
 
     if (auto p = std::dynamic_pointer_cast<SelectNode>(node)) {
-        // Output column names are the inferred names of each ExprBuilder.
         std::set<std::string> out;
         for (size_t i = 0; i < p->columns.size(); ++i) {
             auto e = p->columns[i].expr();
@@ -286,7 +250,6 @@ std::optional<std::set<std::string>> outputColumns(
     }
 
     if (auto p = std::dynamic_pointer_cast<AggNode>(node)) {
-        // Output of Aggregate = (group keys from GroupByNode below) + aggMap keys.
         std::set<std::string> out;
         if (!p->children.empty()) {
             if (auto g = std::dynamic_pointer_cast<GroupByNode>(p->children[0])) {
@@ -304,21 +267,14 @@ std::optional<std::set<std::string>> outputColumns(
         if (!L || !R) return std::nullopt;
         std::set<std::string> onSet(p->on.begin(), p->on.end());
         std::set<std::string> out(L->begin(), L->end());
-        // Right-side non-key columns are appended (join keys live on the left).
         for (const auto& c : *R) if (!onSet.count(c)) out.insert(c);
         return out;
     }
 
-    // Filter / Sort / Limit / GroupBy / Sink preserve their child's schema.
     if (node->children.empty()) return std::nullopt;
     return outputColumns(node->children[0]);
 }
 
-// ---------------------------------------------------------------------------
-// Shallow clone — used every time we need to rewrite one field of a node
-// while leaving everything else intact (crucial to keep the original plan
-// un-mutated so tests can still inspect it).
-// ---------------------------------------------------------------------------
 
 std::shared_ptr<LogicalNode> cloneNode(const std::shared_ptr<LogicalNode>& n) {
     if (auto p = std::dynamic_pointer_cast<ScanNode>(n)) {
@@ -354,9 +310,6 @@ std::shared_ptr<LogicalNode> cloneNode(const std::shared_ptr<LogicalNode>& n) {
     return n;
 }
 
-// ---------------------------------------------------------------------------
-// planEquals — structural check used by optimise() to detect convergence.
-// ---------------------------------------------------------------------------
 
 bool planEquals(const std::shared_ptr<LogicalNode>& a,
                 const std::shared_ptr<LogicalNode>& b);
@@ -439,28 +392,9 @@ bool planEquals(const std::shared_ptr<LogicalNode>& a,
     return false;
 }
 
-// ===========================================================================
-// RULE 3 — Constant folding
-// ===========================================================================
-//
-// CORRECTNESS PROOF:
-//   A pure expression sub-tree containing only LitExpr leaves has no data
-//   dependency whatsoever — its value is fully determined at plan-build
-//   time. Replacing the sub-tree with LitExpr(v) (where v is its evaluated
-//   scalar) is a semantic no-op: both forms produce v on every row.
-//
-// IMPLEMENTATION:
-//   A recursive walker rewrites each Expr tree bottom-up. Whenever a
-//   BinaryExpr / UnaryExpr / StringExpr is encountered whose children are
-//   all literals, we build a dummy 1-row table and reuse the EagerDataFrame
-//   evaluator (via a disposable frame) to compute the concrete scalar.
-// ---------------------------------------------------------------------------
 
 std::shared_ptr<Expr> foldExpr(const std::shared_ptr<Expr>& e);
 
-/// Evaluate a fully-constant expression to a single arrow::Scalar. On any
-/// runtime error (e.g. divide-by-zero) we give up and return the original
-/// expression unchanged — correctness over eagerness.
 std::shared_ptr<Expr> evalToLit(const std::shared_ptr<Expr>& e) {
     try {
         auto empty_schema = arrow::schema({arrow::field("_", arrow::int32())});
@@ -482,7 +416,6 @@ std::shared_ptr<Expr> evalToLit(const std::shared_ptr<Expr>& e) {
 std::shared_ptr<Expr> foldExpr(const std::shared_ptr<Expr>& e) {
     if (!e) return e;
 
-    // Leaves: nothing to do.
     if (std::dynamic_pointer_cast<ColExpr>(e)) return e;
     if (std::dynamic_pointer_cast<LitExpr>(e)) return e;
 
@@ -517,7 +450,6 @@ std::shared_ptr<Expr> foldExpr(const std::shared_ptr<Expr>& e) {
         return out;
     }
     if (auto g = std::dynamic_pointer_cast<AggExpr>(e)) {
-        // Aggregations are data-dependent — never foldable.
         auto C = foldExpr(g->child);
         if (C == g->child) return e;
         auto out = std::make_shared<AggExpr>(*g);
@@ -538,28 +470,6 @@ std::shared_ptr<Expr> foldExpr(const std::shared_ptr<Expr>& e) {
     return e;
 }
 
-// ===========================================================================
-// RULE 4 — Expression simplification (algebraic identities)
-// ===========================================================================
-//
-// CORRECTNESS PROOF:
-//   Every rewrite below is a mathematical identity valid for every value of
-//   the symbolic operand x, INCLUDING null: under Arrow's Kleene/null
-//   semantics, `null * 1 = null` equals the unsimplified `null * lit(1)`
-//   which also yields null. The identities `x == x → true` and `x - x → 0`
-//   do NOT hold when x is null (null == null evaluates to null in Kleene
-//   logic); we apply them only when both sides are either (a) the exact
-//   same ColExpr reference — still technically unsafe if the column is
-//   nullable, but the assignment spec allows this approximation — or
-//   (b) equal literals, in which case nullness is statically decidable.
-//
-// To stay safe, this implementation ONLY applies `x == x → true` and
-// `x - x → 0` when both sides are equal literals (so no null risk) OR
-// when both sides are the same non-literal AND we cannot prove nullability
-// — we skip those. In practice we enable it for identical literals, which
-// is where the big wins come from (they are usually produced by the
-// constant folder first).
-// ---------------------------------------------------------------------------
 
 std::shared_ptr<Expr> simplifyExpr(const std::shared_ptr<Expr>& e) {
     if (!e) return e;
@@ -577,11 +487,10 @@ std::shared_ptr<Expr> simplifyExpr(const std::shared_ptr<Expr>& e) {
         auto R = simplifyExpr(b->right);
         using Op = BinaryExpr::Op;
 
-        // Arithmetic identities on numeric operands.
         if (b->op == Op::MUL) {
             if (litEquals(R, 1)) return L;
             if (litEquals(L, 1)) return R;
-            if (litEquals(R, 0)) return R;           // x * 0 → 0
+            if (litEquals(R, 0)) return R;           
             if (litEquals(L, 0)) return L;
         }
         if (b->op == Op::ADD) {
@@ -592,26 +501,24 @@ std::shared_ptr<Expr> simplifyExpr(const std::shared_ptr<Expr>& e) {
             if (litEquals(R, 0)) return L;
             if (std::dynamic_pointer_cast<LitExpr>(L) &&
                 std::dynamic_pointer_cast<LitExpr>(R) && exprEquals(L, R)) {
-                return makeIntLit(0);                // lit(k) - lit(k) → 0
+                return makeIntLit(0);                
             }
         }
         if (b->op == Op::DIV && litEquals(R, 1)) return L;
 
-        // Boolean identities.
         if (b->op == Op::AND) {
             if (litIsTrue(R))  return L;
             if (litIsTrue(L))  return R;
-            if (litIsFalse(R)) return R;             // x & false → false
+            if (litIsFalse(R)) return R;             
             if (litIsFalse(L)) return L;
         }
         if (b->op == Op::OR) {
             if (litIsFalse(R)) return L;
             if (litIsFalse(L)) return R;
-            if (litIsTrue(R))  return R;             // x | true → true
+            if (litIsTrue(R))  return R;             
             if (litIsTrue(L))  return L;
         }
 
-        // x == x on identical literal sides → true (null-safe for literals).
         if (b->op == Op::EQ && std::dynamic_pointer_cast<LitExpr>(L) &&
             std::dynamic_pointer_cast<LitExpr>(R) && exprEquals(L, R)) {
             return makeBoolLit(true);
@@ -625,7 +532,6 @@ std::shared_ptr<Expr> simplifyExpr(const std::shared_ptr<Expr>& e) {
 
     if (auto u = std::dynamic_pointer_cast<UnaryExpr>(e)) {
         auto C = simplifyExpr(u->child);
-        // ~~x → x
         if (u->op == UnaryExpr::Op::NOT) {
             if (auto inner = std::dynamic_pointer_cast<UnaryExpr>(C)) {
                 if (inner->op == UnaryExpr::Op::NOT) return inner->child;
@@ -655,10 +561,6 @@ std::shared_ptr<Expr> simplifyExpr(const std::shared_ptr<Expr>& e) {
     return e;
 }
 
-// ---------------------------------------------------------------------------
-// rewriteNodeExprs — apply an expression rewrite to every Expr attached to
-// a plan node (predicates, select columns, with_column expr, aggregations).
-// ---------------------------------------------------------------------------
 
 using ExprRewriter = std::shared_ptr<Expr> (*)(const std::shared_ptr<Expr>&);
 
@@ -709,9 +611,6 @@ std::shared_ptr<LogicalNode> rewriteNodeExprs(
     return node;
 }
 
-/// Generic recursive walker: apply `nodeFn` to this node (post-order over
-/// children so nested trees rewrite bottom-up), returning a new node iff
-/// anything changed.
 using NodeRewriter = std::function<std::shared_ptr<LogicalNode>(
     const std::shared_ptr<LogicalNode>&)>;
 
@@ -744,27 +643,6 @@ std::shared_ptr<LogicalNode> mapChildren(
     return out;
 }
 
-// ===========================================================================
-// RULE 1 — Predicate pushdown
-// ===========================================================================
-//
-// CORRECTNESS PROOF:
-//   Filter F with predicate P commutes with operation O iff
-//     (1) O does not alter the columns referenced by P, AND
-//     (2) O does not change the set of input rows that pass P in a
-//         data-dependent way.
-//
-//   • Join: for each left row l and right row r that produce an output
-//     row o = l ⋈ r, the output columns are l's columns ∪ r's non-key
-//     columns. If P references only left-side columns, P(o) depends only
-//     on l; applying F on the left input before the join preserves the
-//     set of qualifying l's, hence the same output rows. Symmetric for
-//     right-side-only predicates.
-//
-//   • GroupBy: keys are copied verbatim from inputs to outputs. A
-//     predicate on key columns partitions rows identically whether
-//     applied before or after grouping.
-// ---------------------------------------------------------------------------
 
 std::shared_ptr<LogicalNode> predicatePushdownRec(
     const std::shared_ptr<LogicalNode>& node);
@@ -773,8 +651,6 @@ std::shared_ptr<LogicalNode> predicatePushdownRec(
     const std::shared_ptr<LogicalNode>& node) {
     if (!node) return node;
 
-    // First: recurse into children so inner filters are pushed before we
-    // consider the current level.
     auto rewritten = mapChildren(node, predicatePushdownRec);
 
     auto filter = std::dynamic_pointer_cast<FilterNode>(rewritten);
@@ -784,7 +660,6 @@ std::shared_ptr<LogicalNode> predicatePushdownRec(
     auto child = filter->children[0];
     auto refs  = colRefs(filter->predicate);
 
-    // --- Filter over Join: push to left or right if possible. -------------
     if (auto jn = std::dynamic_pointer_cast<JoinNode>(child)) {
         auto left_cols  = outputColumns(jn->children[0]);
         auto right_cols = outputColumns(jn->right);
@@ -813,7 +688,6 @@ std::shared_ptr<LogicalNode> predicatePushdownRec(
         }
     }
 
-    // --- Filter over GroupBy: push below if predicate touches only keys. --
     if (auto gb = std::dynamic_pointer_cast<GroupByNode>(child)) {
         bool all_keys = !refs.empty();
         std::set<std::string> keySet(gb->keys.begin(), gb->keys.end());
@@ -831,33 +705,11 @@ std::shared_ptr<LogicalNode> predicatePushdownRec(
     return rewritten;
 }
 
-// ===========================================================================
-// RULE 2 — Projection pushdown
-// ===========================================================================
-//
-// CORRECTNESS PROOF:
-//   A projection P that reads column set C is safe to push below operation
-//   O when C ⊇ (columns O reads ∪ columns O emits that downstream consumes).
-//   Reading fewer columns at Scan time is semantically equivalent to
-//   reading all columns and then projecting; the missing columns are
-//   never observed downstream.
-//
-// IMPLEMENTATION STRATEGY:
-//   Walk top-down with an `optional<set<string>>` of required column names.
-//   • nullopt   = "no downstream constraint known, keep everything".
-//   • set({..}) = "only these columns will be consumed downstream".
-//   At every operator we translate the downstream requirement into the
-//   requirement for each child (adding locally-referenced columns).
-//   When we reach a ScanNode and the requirement is concrete, we stash it
-//   in `scan.projected_columns`. Joins block the optimisation (too
-//   expensive to split precisely without more schema context).
-// ---------------------------------------------------------------------------
 
 std::shared_ptr<LogicalNode> projectionPushdownRec(
     const std::shared_ptr<LogicalNode>& node,
     const std::optional<std::set<std::string>>& required);
 
-/// Convenience: add `extras` to (an optional) required set and return a copy.
 std::optional<std::set<std::string>> augment(
     const std::optional<std::set<std::string>>& req,
     const std::set<std::string>& extras) {
@@ -875,9 +727,6 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
     if (auto s = std::dynamic_pointer_cast<ScanNode>(node)) {
         if (!required) return node;
 
-        // Intersect with the file's actual columns; silently keep only
-        // those that exist to avoid producing a scan whose projection
-        // references missing fields.
         auto file_cols = scanOutputColumns(*s);
         if (file_cols.empty()) return node;
 
@@ -927,7 +776,7 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
         std::optional<std::set<std::string>> child_req;
         if (required) {
             child_req = *required;
-            child_req->erase(p->name);           // child doesn't need this output
+            child_req->erase(p->name);           
             child_req->insert(expr_refs.begin(), expr_refs.end());
         }
         auto newChild = p->children.empty()
@@ -980,7 +829,6 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
     if (auto p = std::dynamic_pointer_cast<AggNode>(node)) {
         std::set<std::string> needs;
         for (const auto& [_, eb] : p->aggMap) collectColRefs(eb.expr(), needs);
-        // GroupByNode below will pad with its keys.
         auto newChild = p->children.empty()
             ? std::shared_ptr<LogicalNode>{}
             : projectionPushdownRec(p->children[0], needs);
@@ -991,9 +839,6 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
     }
 
     if (auto p = std::dynamic_pointer_cast<JoinNode>(node)) {
-        // Split `required` (if present) across the two sides using each
-        // side's inferred schema; on either side always include the join
-        // keys so the join itself can still run.
         auto left_cols  = outputColumns(p->children.empty() ? nullptr : p->children[0]);
         auto right_cols = outputColumns(p->right);
         std::set<std::string> onKeys(p->on.begin(), p->on.end());
@@ -1036,23 +881,6 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
     return node;
 }
 
-// ===========================================================================
-// RULE 5 — Limit pushdown
-// ===========================================================================
-//
-// CORRECTNESS PROOF:
-//   Limit L(n) commutes with O iff O is row-count- and row-order-preserving.
-//     • Select (columns projection):   yes — emits the same rows in order.
-//     • WithColumn:                    yes — appends/replaces a column.
-//     • Filter / Sort / Join / GroupBy: NO — they change row count and/or
-//       relative order, so moving L below them would produce wrong results.
-//     • Scan:                          yes — reading only the first n rows
-//       of the source is exactly what L(n) over an unrestricted scan does.
-//
-// IMPLEMENTATION:
-//   Recursively rewrite. When we see LimitNode over a commuting O, swap
-//   them. When over ScanNode, absorb n into the scan's `row_limit`.
-// ---------------------------------------------------------------------------
 
 std::shared_ptr<LogicalNode> limitPushdownRec(
     const std::shared_ptr<LogicalNode>& node) {
@@ -1064,7 +892,6 @@ std::shared_ptr<LogicalNode> limitPushdownRec(
 
     auto child = lim->children[0];
 
-    // --- LimitNode over SelectNode — swap. --------------------------------
     if (auto sel = std::dynamic_pointer_cast<SelectNode>(child)) {
         if (sel->children.empty()) return rewritten;
         auto newLim = std::make_shared<LimitNode>();
@@ -1075,7 +902,6 @@ std::shared_ptr<LogicalNode> limitPushdownRec(
         return newSel;
     }
 
-    // --- LimitNode over WithColNode — swap. -------------------------------
     if (auto wc = std::dynamic_pointer_cast<WithColNode>(child)) {
         if (wc->children.empty()) return rewritten;
         auto newLim = std::make_shared<LimitNode>();
@@ -1086,12 +912,10 @@ std::shared_ptr<LogicalNode> limitPushdownRec(
         return newWc;
     }
 
-    // --- LimitNode over ScanNode — absorb. --------------------------------
     if (auto s = std::dynamic_pointer_cast<ScanNode>(child)) {
         int64_t new_limit = lim->n;
         if (s->row_limit >= 0) new_limit = std::min<int64_t>(s->row_limit, new_limit);
         if (s->row_limit == new_limit) {
-            // Already absorbed; just drop the redundant LimitNode.
             return child;
         }
         auto out = std::make_shared<ScanNode>(*s);
@@ -1102,11 +926,8 @@ std::shared_ptr<LogicalNode> limitPushdownRec(
     return rewritten;
 }
 
-} // namespace
+} 
 
-// ===========================================================================
-// QueryOptimizer public API
-// ===========================================================================
 
 std::shared_ptr<LogicalNode> QueryOptimizer::predicatePushdown(
     const std::shared_ptr<LogicalNode>& node) const {
@@ -1143,7 +964,6 @@ std::shared_ptr<LogicalNode> QueryOptimizer::limitPushdown(
     return limitPushdownRec(node);
 }
 
-// Fixed-point driver — iterates until the plan stops changing (or 10 hops).
 std::shared_ptr<LogicalNode> QueryOptimizer::optimize(
     const std::shared_ptr<LogicalNode>& plan) const {
     if (!plan) return plan;
@@ -1161,4 +981,4 @@ std::shared_ptr<LogicalNode> QueryOptimizer::optimize(
     return current;
 }
 
-} // namespace dfl
+} 

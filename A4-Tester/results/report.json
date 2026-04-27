@@ -1,0 +1,692 @@
+{
+  "passed": 80,
+  "total": 80,
+  "tests": [
+    {
+      "program": "test_io",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 22.64,
+      "error": null,
+      "subtests": [
+        {
+          "name": "io_csv_roundtrip",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "io_parquet_as_csv",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "io_from_parquet",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "read_csv": 4.15933,
+        "write_csv": 1.45384,
+        "write_parquet": 1.66229,
+        "read_parquet": 0.504705,
+        "read_parquet_direct": 0.537049
+      }
+    },
+    {
+      "program": "test_select_filter",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 13.96,
+      "error": null,
+      "subtests": [
+        {
+          "name": "select_result",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "filter_gt",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "filter_eq",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "filter_compound",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "filter_select",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "select": 0.008734,
+        "filter_gt": 0.21432,
+        "filter_eq": 0.10475,
+        "filter_compound": 0.092237,
+        "filter_select": 0.083344
+      }
+    },
+    {
+      "program": "test_groupby_agg",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 19.76,
+      "error": null,
+      "subtests": [
+        {
+          "name": "groupby_result",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "groupby_multi",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "groupby_single": 0.925543,
+        "groupby_multi": 1.66856
+      }
+    },
+    {
+      "program": "test_join",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 19.95,
+      "error": null,
+      "subtests": [
+        {
+          "name": "join_inner",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "join_left",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "join_right",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "join_inner": 1.23969,
+        "join_left": 1.25954,
+        "join_right": 1.11401
+      }
+    },
+    {
+      "program": "test_expressions",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 15.72,
+      "error": null,
+      "subtests": [
+        {
+          "name": "expr_bonus",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "expr_abs",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "expr_complex_filter",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "expr_arith_chain",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "expr_bonus": 0.102196,
+        "expr_abs": 0.036909,
+        "expr_complex_filter": 0.15981,
+        "expr_arith_chain": 0.080029
+      }
+    },
+    {
+      "program": "test_string_ops",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 16.82,
+      "error": null,
+      "subtests": [
+        {
+          "name": "contains_result",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "upper_result",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "lower_result",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "startswith_result",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "endswith_result",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "length_result",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "str_contains": 0.114566,
+        "str_upper": 4.19091,
+        "str_lower": 0.032341,
+        "str_startswith": 0.076537,
+        "str_endswith": 0.033785,
+        "str_length": 0.014438
+      }
+    },
+    {
+      "program": "test_sort_head",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 13.67,
+      "error": null,
+      "subtests": [
+        {
+          "name": "sort_asc",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "sort_desc",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "head_result",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "sort_head",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "sort_asc": 0.301963,
+        "sort_desc": 0.151523,
+        "head": 0.009693,
+        "sort_head": 0.134826
+      }
+    },
+    {
+      "program": "test_with_column",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 13.57,
+      "error": null,
+      "subtests": [
+        {
+          "name": "wc_doubled",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "wc_sum",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "wc_doubled": 0.522169,
+        "wc_sum": 0.032939
+      }
+    },
+    {
+      "program": "test_lazy",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 90.23,
+      "error": null,
+      "subtests": [
+        {
+          "name": "lazy_filter",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "lazy_select",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "lazy_groupby",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "lazy_chain",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "lazy_sink",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "lazy_explain",
+          "passed": true,
+          "message": ""
+        }
+      ],
+      "timing": {
+        "lazy_filter": 11.3823,
+        "lazy_select": 1.88624,
+        "lazy_groupby": 3.02809,
+        "lazy_chain": 2.78794,
+        "lazy_sink": 2.51643
+      }
+    },
+    {
+      "program": "test_null_types",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 19.77,
+      "error": null,
+      "subtests": [
+        {
+          "name": "is_null_result",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "is_not_null_result",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "null_arith",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "null_filter_compute",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "is_null": 0.252561,
+        "is_not_null": 0.156665,
+        "null_arith": 0.091338,
+        "null_filter_compute": 0.066331
+      }
+    },
+    {
+      "program": "test_edge_cases",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 24.5,
+      "error": null,
+      "subtests": [
+        {
+          "name": "edge_empty_filter",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "edge_head_zero",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "edge_head_large",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "edge_select_single",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "edge_replace_col",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "edge_filter_all",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "edge_single_group",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "edge_double_sort",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "edge_empty_filter": 0.769292,
+        "edge_head_zero": 0.008646,
+        "edge_head_large": 0.0035,
+        "edge_select_single": 0.00672,
+        "edge_replace_col": 0.231433,
+        "edge_filter_all": 0.377138,
+        "edge_single_group": 0.462895,
+        "edge_double_sort": 0.479418
+      }
+    },
+    {
+      "program": "test_operators",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 15.62,
+      "error": null,
+      "subtests": [
+        {
+          "name": "ops_subtract",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "ops_divide",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "ops_modulo",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "ops_less",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "ops_less_equal",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "ops_greater_equal",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "ops_not_equal",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "ops_not",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "ops_nested_arith",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "ops_bool_combo",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "ops_subtract": 0.403475,
+        "ops_divide": 0.037855,
+        "ops_modulo": 0.633853,
+        "ops_less": 0.083316,
+        "ops_less_equal": 0.05571,
+        "ops_greater_equal": 0.056793,
+        "ops_not_equal": 0.096615,
+        "ops_not": 0.066831,
+        "ops_nested_arith": 0.064872,
+        "ops_bool_combo": 0.126325
+      }
+    },
+    {
+      "program": "test_advanced_join",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 17.17,
+      "error": null,
+      "subtests": [
+        {
+          "name": "join_outer",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "join_empty_inner",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "join_self",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "join_right_nulls",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "join_outer": 1.02534,
+        "join_empty_inner": 0.312268,
+        "join_self": 1.6274,
+        "join_right_nulls": 0.551993
+      }
+    },
+    {
+      "program": "test_chained_ops",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 15.85,
+      "error": null,
+      "subtests": [
+        {
+          "name": "chain_filter_sort_head",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "chain_wc_filter_gb",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "chain_multi_filter",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "chain_select_wc",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "chain_full_pipeline",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "chain_filter_sort_head": 0.427697,
+        "chain_wc_filter_gb": 0.488325,
+        "chain_multi_filter": 0.256094,
+        "chain_select_wc": 0.037016,
+        "chain_full_pipeline": 0.347058
+      }
+    },
+    {
+      "program": "test_advanced_lazy",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 19.36,
+      "error": null,
+      "subtests": [
+        {
+          "name": "lazy_join",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "lazy_with_column",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "lazy_sort_head",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "lazy_predicate_push",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "lazy_full_pipeline",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "lazy_join": 5.58,
+        "lazy_with_column": 1.40501,
+        "lazy_sort_head": 0.895643,
+        "lazy_predicate_push": 0.733053,
+        "lazy_full_pipeline": 1.06
+      }
+    },
+    {
+      "program": "test_performance",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 107.06,
+      "error": null,
+      "subtests": [
+        {
+          "name": "perf_filter",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "perf_groupby",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "perf_sort",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "perf_lazy_chain",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "perf_read_large": 11.4412,
+        "perf_filter": 1.57334,
+        "perf_groupby": 44.2694,
+        "perf_sort": 14.1106,
+        "perf_lazy_chain": 14.6335
+      }
+    },
+    {
+      "program": "test_from_columns",
+      "compiled": true,
+      "ran": true,
+      "exit_code": 0,
+      "runtime_ms": 8.71,
+      "error": null,
+      "subtests": [
+        {
+          "name": "fc_simple",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "fc_filter",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "fc_with_column",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "fc_empty",
+          "passed": true,
+          "message": "OK"
+        },
+        {
+          "name": "fc_select",
+          "passed": true,
+          "message": "OK"
+        }
+      ],
+      "timing": {
+        "fc_simple": 2.0193,
+        "fc_filter": 0.072106,
+        "fc_with_column": 0.021881,
+        "fc_empty": 0.001872,
+        "fc_select": 0.007501
+      }
+    }
+  ]
+}

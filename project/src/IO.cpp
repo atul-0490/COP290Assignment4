@@ -19,8 +19,6 @@ namespace dfl {
 
 namespace {
 
-/// Small helper that converts an arrow::Status into a std::runtime_error if
-/// the operation failed. Keeps the call sites short and consistent.
 void ensureOk(const arrow::Status& s, const std::string& context) {
     if (!s.ok()) {
         throw std::runtime_error(context + ": " + s.ToString());
@@ -35,11 +33,34 @@ T unwrap(arrow::Result<T> res, const std::string& context) {
     return std::move(res).ValueOrDie();
 }
 
-} // namespace
+EagerDataFrame from_columns_ordered(
+    const std::vector<std::pair<std::string, std::shared_ptr<arrow::Array>>>& columns) {
+    if (columns.empty()) return EagerDataFrame();
 
-// ---------------------------------------------------------------------------
-// CSV
-// ---------------------------------------------------------------------------
+    int64_t nrows = -1;
+    std::vector<std::shared_ptr<arrow::Field>> fields;
+    std::vector<std::shared_ptr<arrow::ChunkedArray>> cols;
+    fields.reserve(columns.size());
+    cols.reserve(columns.size());
+
+    for (const auto& [name, arr] : columns) {
+        if (!arr) {
+            throw std::runtime_error("from_columns: null array for '" + name + "'");
+        }
+        if (nrows < 0) nrows = arr->length();
+        else if (arr->length() != nrows) {
+            throw std::runtime_error("from_columns: column length mismatch");
+        }
+        fields.push_back(arrow::field(name, arr->type()));
+        cols.push_back(std::make_shared<arrow::ChunkedArray>(arr));
+    }
+
+    auto schema = arrow::schema(fields);
+    return EagerDataFrame(arrow::Table::Make(schema, cols, nrows));
+}
+
+} 
+
 
 EagerDataFrame read_csv(const std::string& path) {
     auto pool = arrow::default_memory_pool();
@@ -61,9 +82,6 @@ EagerDataFrame read_csv(const std::string& path) {
     return EagerDataFrame(table);
 }
 
-// ---------------------------------------------------------------------------
-// Parquet
-// ---------------------------------------------------------------------------
 
 EagerDataFrame read_parquet(const std::string& path) {
 #ifdef DFL_HAVE_PARQUET
@@ -84,9 +102,6 @@ EagerDataFrame read_parquet(const std::string& path) {
 #endif
 }
 
-// ---------------------------------------------------------------------------
-// Lazy scans (plan-only; ScanNode is the leaf of the lazy DAG).
-// ---------------------------------------------------------------------------
 
 LazyDataFrame scan_csv(const std::string& path) {
     auto n       = std::make_shared<ScanNode>();
@@ -102,36 +117,24 @@ LazyDataFrame scan_parquet(const std::string& path) {
     return LazyDataFrame(n);
 }
 
-// ---------------------------------------------------------------------------
-// from_columns — build a table directly from named Arrow arrays.
-// ---------------------------------------------------------------------------
 
 EagerDataFrame from_columns(
     const std::map<std::string, std::shared_ptr<arrow::Array>>& columns) {
-    if (columns.empty()) return EagerDataFrame();
-
-    // All columns must have the same length. We keep std::map's natural
-    // alphabetical ordering so the resulting schema is deterministic.
-    int64_t nrows = -1;
-    std::vector<std::shared_ptr<arrow::Field>>       fields;
-    std::vector<std::shared_ptr<arrow::ChunkedArray>> cols;
-    fields.reserve(columns.size());
-    cols.reserve(columns.size());
-
-    for (const auto& [name, arr] : columns) {
-        if (!arr) {
-            throw std::runtime_error("from_columns: null array for '" + name + "'");
-        }
-        if (nrows < 0) nrows = arr->length();
-        else if (arr->length() != nrows) {
-            throw std::runtime_error("from_columns: column length mismatch");
-        }
-        fields.push_back(arrow::field(name, arr->type()));
-        cols.push_back(std::make_shared<arrow::ChunkedArray>(arr));
-    }
-
-    auto schema = arrow::schema(fields);
-    return EagerDataFrame(arrow::Table::Make(schema, cols, nrows));
+    std::vector<std::pair<std::string, std::shared_ptr<arrow::Array>>> ordered;
+    ordered.reserve(columns.size());
+    for (const auto& kv : columns) ordered.push_back(kv);
+    return from_columns_ordered(ordered);
 }
 
-} // namespace dfl
+EagerDataFrame from_columns(
+    const std::vector<std::pair<std::string, std::shared_ptr<arrow::Array>>>& columns) {
+    return from_columns_ordered(columns);
+}
+
+EagerDataFrame from_columns(
+    std::initializer_list<std::pair<std::string, std::shared_ptr<arrow::Array>>> columns) {
+    std::vector<std::pair<std::string, std::shared_ptr<arrow::Array>>> ordered(columns);
+    return from_columns_ordered(ordered);
+}
+
+} 

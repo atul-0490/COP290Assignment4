@@ -1,8 +1,3 @@
-// Step 2 — full correctness tests for EagerDataFrame.
-//
-// Deliberately uses only <cassert> so the test binary is dependency-free and
-// always runs after a plain `make`. Each test is a standalone function that
-// prints its name and asserts its expectations; main() runs them all.
 
 #include <cassert>
 #include <cmath>
@@ -30,9 +25,6 @@
 
 using namespace dfl;
 
-// ---------------------------------------------------------------------------
-// Helpers for building small Arrow tables from raw vectors.
-// ---------------------------------------------------------------------------
 
 namespace {
 
@@ -68,7 +60,6 @@ std::shared_ptr<arrow::Array> str(const std::vector<std::string>& v) {
     return a;
 }
 
-// Build an i32 array with explicit null mask: `validity[i] == 0` → null.
 std::shared_ptr<arrow::Array> i32_with_nulls(const std::vector<int32_t>& vals,
                                              const std::vector<bool>& valid) {
     arrow::Int32Builder b;
@@ -129,9 +120,6 @@ std::shared_ptr<arrow::ChunkedArray> column(const EagerDataFrame& df,
     return c;
 }
 
-// ---------------------------------------------------------------------------
-// Individual tests
-// ---------------------------------------------------------------------------
 
 void test1_csv_roundtrip() {
     std::cout << "test1_csv_roundtrip ... ";
@@ -192,18 +180,16 @@ void test4_group_by_aggregate() {
                  .aggregate({{"total", col("salary").sum()}});
     assert(out.numRows() == 2);
     assert(out.columnNames() == (std::vector<std::string>{"dept", "total"}));
-    // Sort by dept for deterministic comparison (group_by sorts internally,
-    // so "eng" < "hr" lexicographically).
     auto totals = asF64(column(out, "total"));
-    assert(std::abs(totals[0] - 330.0) < 1e-9); // eng: 100+120+110
-    assert(std::abs(totals[1] -  110.0) < 1e-9); // hr:  50+60
+    assert(std::abs(totals[0] - 330.0) < 1e-9); 
+    assert(std::abs(totals[1] -  110.0) < 1e-9); 
     std::cout << "OK\n";
 }
 
 void test5_sort_desc() {
     std::cout << "test5_sort_desc ........ ";
     auto df = makeFrame({{"age", i32({10, 60, 30, 45, 25})}});
-    auto out = df.sort({"age"}, /*ascending=*/false).head(3);
+    auto out = df.sort({"age"}, false).head(3);
     assert(out.numRows() == 3);
     auto vals = asI32(column(out, "age"));
     assert(vals.front() == 60);
@@ -235,7 +221,6 @@ void test7_null_propagation() {
     });
     auto out = df.select({ (col("x") + lit<int32_t>(1)).alias("y") });
     auto chunked = column(out, "y");
-    // Middle row should be null.
     auto arr = std::static_pointer_cast<arrow::Int32Array>(chunked->chunk(0));
     assert(arr->IsValid(0));
     assert(!arr->IsValid(1));
@@ -265,9 +250,6 @@ void test8_type_error() {
     std::cout << "OK\n";
 }
 
-// ---------------------------------------------------------------------------
-// Fixture helpers for lazy tests — write small CSV / Parquet files on demand.
-// ---------------------------------------------------------------------------
 
 void writeCsvFixture(const std::string& path, const std::string& body) {
     std::ofstream f(path);
@@ -279,10 +261,6 @@ void writeParquetFixtureFromEager(const std::string& path,
     df.write_parquet(path);
 }
 
-// ---------------------------------------------------------------------------
-// Bonus coverage: make sure string funcs and aggregations really work,
-// plus is_null / is_not_null / ends_with.
-// ---------------------------------------------------------------------------
 
 void test9_string_and_agg() {
     std::cout << "test9_strings_and_agg .. ";
@@ -300,9 +278,6 @@ void test9_string_and_agg() {
     std::cout << "OK\n";
 }
 
-// ---------------------------------------------------------------------------
-// Lazy-mode tests (Step 3).
-// ---------------------------------------------------------------------------
 
 void test10_lazy_collect() {
     std::cout << "test10_lazy_collect .... ";
@@ -323,19 +298,16 @@ void test10_lazy_collect() {
 
 void test11_lazy_explain() {
     std::cout << "test11_lazy_explain .... ";
-    const std::string csv = "/tmp/dfl_lazy_people.csv"; // reused from test10
+    const std::string csv = "/tmp/dfl_lazy_people.csv"; 
     auto lf = scan_csv(csv)
                   .filter(col("age") > lit<int64_t>(20))
                   .select({"id", "age"})
                   .sort({"age"}, false)
                   .head(10);
 
-    // Must be non-fatal whether or not `dot` is installed.
     const std::string png = "/tmp/dfl_lazy_plan.png";
     lf.explain(png);
 
-    // Also sanity-check the DOT string directly so this test asserts
-    // something concrete even if the PNG fails to render.
     auto dot = renderDotGraph(lf.plan());
     assert(dot.find("digraph") != std::string::npos);
     assert(dot.find("Filter") != std::string::npos);
@@ -391,8 +363,6 @@ void test13_lazy_join() {
 
 void test14_lazy_sort_head_parquet() {
     std::cout << "test14_lazy_sort_head .. ";
-    // Build a parquet fixture via the eager writer so the test is
-    // self-contained (doesn't depend on an external .parquet file).
     auto fixture = makeFrame({
         {"id",    i32({1, 2, 3, 4, 5})},
         {"score", f64({10.0, 90.0, 30.0, 70.0, 50.0})},
@@ -400,10 +370,9 @@ void test14_lazy_sort_head_parquet() {
     const std::string pq = "/tmp/dfl_lazy_scores.parquet";
     fixture.write_parquet(pq);
 
-    auto result = scan_parquet(pq).sort({"score"}, /*ascending=*/false)
+    auto result = scan_parquet(pq).sort({"score"}, false)
                                    .head(3).collect();
     assert(result.numRows() == 3);
-    // First row must be the highest score.
     auto scores = asF64(column(result, "score"));
     assert(std::abs(scores[0] - 90.0) < 1e-9);
     assert((scores == std::vector<double>{90.0, 70.0, 50.0}));
@@ -412,7 +381,7 @@ void test14_lazy_sort_head_parquet() {
 
 void test15_lazy_sink_csv() {
     std::cout << "test15_lazy_sink_csv ... ";
-    const std::string path = "/tmp/dfl_lazy_people.csv"; // reused from test10
+    const std::string path = "/tmp/dfl_lazy_people.csv"; 
     const std::string out  = "/tmp/dfl_lazy_filtered.csv";
     scan_csv(path)
         .filter(col("age") > lit<int64_t>(20))
@@ -423,12 +392,7 @@ void test15_lazy_sink_csv() {
     std::cout << "OK\n";
 }
 
-// ===========================================================================
-// Step 4 — QueryOptimizer tests
-// ===========================================================================
 
-/// Convenience: run `f` a few times and return the minimum wall-clock time
-/// so benchmark assertions are less flaky under noisy CPUs.
 template <typename F>
 double minTimeMs(F&& f, int reps = 3) {
     double best = 1e18;
@@ -442,8 +406,6 @@ double minTimeMs(F&& f, int reps = 3) {
     return best;
 }
 
-/// Write a CSV with `nrows` rows and `ncols+1` int64 columns (an "id" col
-/// plus `value0..valueN-1`). Used by the heavy optimizer benchmark.
 void writeWideIntCsv(const std::string& path, int64_t nrows, int ncols) {
     std::ofstream f(path);
     f << "id";
@@ -461,7 +423,6 @@ void test16_predicate_pushdown() {
     const std::string left  = "/tmp/dfl_opt_left.csv";
     const std::string right = "/tmp/dfl_opt_right.csv";
 
-    // Build a left table with 2000 rows, a right with 200.
     {
         std::ofstream f(left);
         f << "id,left_val\n";
@@ -477,14 +438,11 @@ void test16_predicate_pushdown() {
                   .join(scan_csv(right), {"id"}, "inner")
                   .filter(col("left_val") > lit<int64_t>(5));
 
-    // Correctness: optimized must match raw execution.
     auto raw = lf.collect_raw();
     auto opt = lf.collect();
     assert(raw.numRows() == opt.numRows());
     assert(raw.columnNames() == opt.columnNames());
 
-    // Verify the predicate was physically moved below the Join: after
-    // optimization the JoinNode's LEFT child should be a FilterNode.
     QueryOptimizer o;
     auto optimized = o.optimize(lf.plan());
     auto jn = std::dynamic_pointer_cast<JoinNode>(optimized);
@@ -497,13 +455,12 @@ void test16_predicate_pushdown() {
 
 void test17_constant_folding() {
     std::cout << "test17_constant_folding ..... ";
-    const std::string path = "/tmp/dfl_lazy_people.csv"; // reused fixture
+    const std::string path = "/tmp/dfl_lazy_people.csv"; 
     auto lf = scan_csv(path).filter(col("age") > (lit<int64_t>(20) + lit<int64_t>(10)));
 
     QueryOptimizer o;
     auto optimized = o.optimize(lf.plan());
 
-    // After folding, the filter's predicate must be (col("age") > lit(30)).
     auto filter = std::dynamic_pointer_cast<FilterNode>(optimized);
     assert(filter != nullptr);
     auto bin = std::dynamic_pointer_cast<BinaryExpr>(filter->predicate);
@@ -516,7 +473,6 @@ void test17_constant_folding() {
     assert(scalar && scalar->is_valid);
     assert(std::static_pointer_cast<arrow::Int64Scalar>(scalar)->value == 30);
 
-    // Result should match the unoptimized version.
     auto raw = lf.collect_raw();
     auto opt = lf.collect();
     assert(raw.numRows() == opt.numRows());
@@ -525,10 +481,10 @@ void test17_constant_folding() {
 
 void test18_expression_simplification() {
     std::cout << "test18_expression_simpl ..... ";
-    const std::string path = "/tmp/dfl_opt_left.csv"; // reused fixture (id, left_val)
+    const std::string path = "/tmp/dfl_opt_left.csv"; 
     auto lf = scan_csv(path).select({
-        col("id") * lit<int64_t>(1),          // → col("id")
-        col("left_val") + lit<int64_t>(0),    // → col("left_val")
+        col("id") * lit<int64_t>(1),          
+        col("left_val") + lit<int64_t>(0),    
     });
 
     QueryOptimizer o;
@@ -549,7 +505,7 @@ void test18_expression_simplification() {
 
 void test19_limit_pushdown() {
     std::cout << "test19_limit_pushdown ....... ";
-    const std::string path = "/tmp/dfl_opt_left.csv"; // id, left_val
+    const std::string path = "/tmp/dfl_opt_left.csv"; 
     auto lf = scan_csv(path)
                   .with_column("z", col("left_val") + lit<int64_t>(1))
                   .head(5);
@@ -557,7 +513,6 @@ void test19_limit_pushdown() {
     QueryOptimizer o;
     auto optimized = o.optimize(lf.plan());
 
-    // Expected shape: WithColumn → Scan(row_limit = 5)
     auto wc = std::dynamic_pointer_cast<WithColNode>(optimized);
     assert(wc != nullptr);
     assert(!wc->children.empty());
@@ -565,7 +520,6 @@ void test19_limit_pushdown() {
     assert(scan != nullptr);
     assert(scan->row_limit == 5);
 
-    // Results must match the un-pushed version.
     auto raw = lf.collect_raw();
     auto opt = lf.collect();
     assert(raw.numRows() == 5);
@@ -576,11 +530,10 @@ void test19_limit_pushdown() {
 void test20_optimizer_benchmark() {
     std::cout << "test20_optimizer_bench ...... " << std::flush;
 
-    // Build 20k × 10-column left CSV and 20k × 2-column right CSV.
     const std::string big_left  = "/tmp/dfl_bench_left.csv";
     const std::string big_right = "/tmp/dfl_bench_right.csv";
     constexpr int64_t NROWS = 20000;
-    writeWideIntCsv(big_left, NROWS, /*ncols=*/9);      // id + value0..value8
+    writeWideIntCsv(big_left, NROWS, 9);      
     {
         std::ofstream f(big_right);
         f << "id,side\n";
@@ -595,7 +548,6 @@ void test20_optimizer_benchmark() {
                  .head(100);
     };
 
-    // Warmup once so the schema cache and Arrow kernels are primed.
     (void)build().collect();
 
     double raw_ms = minTimeMs([&]() {
@@ -609,24 +561,18 @@ void test20_optimizer_benchmark() {
 
     std::cout << "raw=" << raw_ms << "ms opt=" << opt_ms << "ms ... ";
 
-    // Correctness parity on a single run.
     auto raw = build().collect_raw();
     auto opt = build().collect();
     assert(raw.numRows() == opt.numRows());
     assert(raw.columnNames() == opt.columnNames());
 
-    // Performance gate: optimizer must beat the unoptimized path by >=10%.
     assert(opt_ms < raw_ms * 0.9);
     std::cout << "OK\n";
 }
 
-// ---------------------------------------------------------------------------
-// Edge-case tests (Step 5).
-// ---------------------------------------------------------------------------
 
 void test21_empty_dataframe() {
     std::cout << "test21_empty_dataframe . ";
-    // An EagerDataFrame with 0 rows but a defined schema.
     arrow::Int32Builder ib;
     std::shared_ptr<arrow::Array> a;
     [[maybe_unused]] auto st = ib.Finish(&a);
@@ -667,14 +613,12 @@ void test23_all_null_column() {
     auto df = makeFrame({
         {"x", i32_with_nulls({0, 0, 0, 0}, {false, false, false, false})},
     });
-    // sum() on an all-null column is null (Arrow semantics).
     auto agg = df.aggregate({{"s", col("x").sum()}});
     auto sum_col = column(agg, "s");
     auto chunk0  = sum_col->chunk(0);
     assert(chunk0->length() == 1);
     assert(chunk0->IsNull(0));
 
-    // filter(is_null) must keep every row.
     auto all = df.filter(col("x").is_null());
     assert(all.numRows() == 4);
     std::cout << "OK\n";
@@ -686,8 +630,6 @@ void test24_large_string_column() {
     std::vector<std::string> v;
     v.reserve(N);
     for (int i = 0; i < N; ++i) {
-        // 1 in 3 rows contains '@', others don't, so we can validate
-        // contains() counts correctly.
         v.push_back(i % 3 == 0 ? "user" + std::to_string(i) + "@host"
                                 : "user" + std::to_string(i));
     }
@@ -695,16 +637,12 @@ void test24_large_string_column() {
 
     auto has = df.with_column("hasAt", col("email").contains("@"))
                  .aggregate({{"n", col("hasAt").sum()}});
-    // contains() returns int32 match-count; sum is the number of rows with
-    // at least one '@'. Exactly ceil(N/3) rows include an '@'.
     int64_t expected = 0;
     for (int i = 0; i < N; ++i) if (i % 3 == 0) ++expected;
     auto arr = has.table()->GetColumnByName("n")->chunk(0);
-    // sum() of int32 → int64 in Arrow.
     auto sum_arr = std::static_pointer_cast<arrow::Int64Array>(arr);
     assert(sum_arr->Value(0) == expected);
 
-    // to_upper() must work over 10k rows.
     auto up = df.select({ col("email").to_upper().alias("E") });
     assert(up.numRows() == N);
     auto e = std::static_pointer_cast<arrow::StringArray>(
@@ -726,7 +664,6 @@ void test25_chained_filters() {
                        (col("x") != lit<int32_t>(5)));
     assert(a.numRows() == b.numRows());
     assert(asI32(column(a, "x")) == asI32(column(b, "x")));
-    // Expected: {3,4,6,7,8}
     assert((asI32(column(a, "x")) == std::vector<int32_t>{3, 4, 6, 7, 8}));
     std::cout << "OK\n";
 }
@@ -747,7 +684,6 @@ void test26_multi_key_join() {
     assert(out.numRows() == 3);
     auto v = asI64(column(out, "val"));
     auto b = asI64(column(out, "bonus"));
-    // Pairs matched: (eng,2024,20,100), (hr,2023,30,200), (hr,2024,40,300)
     int64_t sumV = 0, sumB = 0;
     for (auto x : v) sumV += x;
     for (auto x : b) sumB += x;
@@ -777,7 +713,7 @@ void test27_eight_op_lazy_plan() {
                    .head(10)
                    .collect();
     assert(out.numRows() == 2);
-    assert(out.columnNames().size() == 3); // dept, s, n
+    assert(out.columnNames().size() == 3); 
     std::cout << "OK\n";
 }
 
@@ -804,7 +740,7 @@ void test28_parquet_roundtrip() {
 
 void test29_optimizer_idempotency() {
     std::cout << "test29_opt_idempotent .. ";
-    const std::string path = "/tmp/dfl_lazy_people.csv"; // reused
+    const std::string path = "/tmp/dfl_lazy_people.csv"; 
     auto lf = scan_csv(path)
                  .filter(col("age") > lit<int64_t>(20))
                  .with_column("age2", col("age") * lit<int64_t>(1))
@@ -814,7 +750,6 @@ void test29_optimizer_idempotency() {
     auto once  = opt.optimize(lf.plan());
     auto twice = opt.optimize(once);
 
-    // Structural equality via DOT rendering — same plans render the same.
     auto d1 = renderDotGraph(once);
     auto d2 = renderDotGraph(twice);
     assert(d1 == d2);
@@ -847,13 +782,12 @@ void test31_type_error_message() {
         msg      = e.what();
     }
     assert(threw_ia);
-    // Message must mention both type names so users can see what collided.
     assert(msg.find("string") != std::string::npos);
     assert(msg.find("int") != std::string::npos);
     std::cout << "OK\n";
 }
 
-} // namespace
+} 
 
 int main() {
     try {

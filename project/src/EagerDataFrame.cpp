@@ -1,7 +1,9 @@
 #include "EagerDataFrame.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
+#include <cmath>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -23,17 +25,9 @@
 
 namespace dfl {
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 namespace {
 
-/// Arrow packages its compute kernels (add / filter / sort / ...) in a
-/// separate library (libarrow_compute). The kernels only register themselves
-/// with the global FunctionRegistry after an explicit call to
-/// arrow::compute::Initialize(). We lazy-trigger this exactly once from the
-/// first public API call so user code never has to.
 void ensureComputeInitialized() {
     static const bool init_ok = []() {
         auto s = arrow::compute::Initialize();
@@ -46,14 +40,12 @@ void ensureComputeInitialized() {
     (void)init_ok;
 }
 
-/// Throw a std::runtime_error from an arrow::Status if it is not OK.
 void ensureOk(const arrow::Status& s, const std::string& context) {
     if (!s.ok()) {
         throw std::runtime_error(context + ": " + s.ToString());
     }
 }
 
-/// Unwrap an arrow::Result<T>, throwing on error.
 template <typename T>
 T unwrap(arrow::Result<T>&& res, const std::string& context) {
     if (!res.ok()) {
@@ -62,7 +54,6 @@ T unwrap(arrow::Result<T>&& res, const std::string& context) {
     return std::move(res).ValueOrDie();
 }
 
-/// Invoke an Arrow compute function by name and return the resulting Datum.
 arrow::Datum call(const std::string& fn,
                   const std::vector<arrow::Datum>& args,
                   const arrow::compute::FunctionOptions* opts = nullptr) {
@@ -73,8 +64,6 @@ arrow::Datum call(const std::string& fn,
     return res.ValueOrDie();
 }
 
-/// Broadcast any Datum (Scalar / Array / ChunkedArray) to a ChunkedArray of
-/// exactly `nrows` rows. Scalars get expanded into a single-chunk array.
 std::shared_ptr<arrow::ChunkedArray> datumToChunkedArray(
     const arrow::Datum& d, int64_t nrows) {
     switch (d.kind()) {
@@ -92,8 +81,6 @@ std::shared_ptr<arrow::ChunkedArray> datumToChunkedArray(
     }
 }
 
-/// Validate that two column types can be combined by a given BinaryExpr::Op.
-/// Throws std::invalid_argument on incompatibility.
 void validateBinaryOp(ColType lt, ColType rt, BinaryExpr::Op op) {
     using Op = BinaryExpr::Op;
     switch (op) {
@@ -103,11 +90,9 @@ void validateBinaryOp(ColType lt, ColType rt, BinaryExpr::Op op) {
                     "Arithmetic requires numeric operands, got " +
                     colTypeToString(lt) + " and " + colTypeToString(rt));
             }
-            // promoteTypes additionally enforces same-family rules.
             (void)promoteTypes(lt, rt);
             break;
         case Op::EQ: case Op::NEQ:
-            // equality works on any matching family (numeric↔numeric, etc.)
             if ((isNumeric(lt) && isNumeric(rt)) ||
                 (lt == rt)) return;
             throw std::invalid_argument(
@@ -127,15 +112,10 @@ void validateBinaryOp(ColType lt, ColType rt, BinaryExpr::Op op) {
     }
 }
 
-/// Determine the ColType of a ChunkedArray for type-checking purposes.
 ColType chunkedType(const std::shared_ptr<arrow::ChunkedArray>& c) {
     return arrowTypeToColType(c->type());
 }
 
-// ---------------------------------------------------------------------------
-// Expression evaluator — free function so it can run against any table
-// (group aggregation evaluates expressions against sliced per-group tables).
-// ---------------------------------------------------------------------------
 
 std::shared_ptr<arrow::ChunkedArray> evalExprOn(
     const std::shared_ptr<arrow::Table>& table,
@@ -164,13 +144,65 @@ std::shared_ptr<arrow::ChunkedArray> evalBinaryExpr(
     auto R = evalExprOn(table, e.right);
     validateBinaryOp(chunkedType(L), chunkedType(R), e.op);
 
+    if (e.op == BinaryExpr::Op::MOD) {
+        std::shared_ptr<arrow::Array> left_arr;
+        std::shared_ptr<arrow::Array> right_arr;
+
+        if (L->num_chunks() == 0) {
+            left_arr = unwrap(arrow::MakeArrayOfNull(L->type(), table->num_rows()),
+                              "mod: empty left fill");
+        } else {
+            left_arr = unwrap(arrow::Concatenate(L->chunks()), "mod: concat left chunks");
+        }
+        if (R->num_chunks() == 0) {
+            right_arr = unwrap(arrow::MakeArrayOfNull(R->type(), table->num_rows()),
+                               "mod: empty right fill");
+        } else {
+            right_arr = unwrap(arrow::Concatenate(R->chunks()), "mod: concat right chunks");
+        }
+
+        auto out_ty = left_arr->type();
+        auto out_builder = unwrap(arrow::MakeBuilder(out_ty), "mod: MakeBuilder");
+        ensureOk(out_builder->Reserve(table->num_rows()), "mod: Reserve");
+
+        for (int64_t i = 0; i < table->num_rows(); ++i) {
+            auto ls = left_arr->GetScalar(i).ValueOrDie();
+            auto rs = right_arr->GetScalar(i).ValueOrDie();
+
+            if (!ls->is_valid || !rs->is_valid) {
+                ensureOk(out_builder->AppendNull(), "mod: AppendNull");
+                continue;
+            }
+
+            double lv = std::stod(ls->ToString());
+            double rv = std::stod(rs->ToString());
+            if (rv == 0.0) {
+                ensureOk(out_builder->AppendNull(), "mod: divide-by-zero null");
+                continue;
+            }
+
+            if (out_ty->id() == arrow::Type::INT32 || out_ty->id() == arrow::Type::INT64) {
+                int64_t lvi = static_cast<int64_t>(lv);
+                int64_t rvi = static_cast<int64_t>(rv);
+                auto out_scalar = std::make_shared<arrow::Int64Scalar>(lvi % rvi);
+                ensureOk(out_builder->AppendScalar(*out_scalar), "mod: AppendScalar int");
+            } else {
+                auto out_scalar = std::make_shared<arrow::DoubleScalar>(std::fmod(lv, rv));
+                ensureOk(out_builder->AppendScalar(*out_scalar), "mod: AppendScalar float");
+            }
+        }
+
+        std::shared_ptr<arrow::Array> out_arr;
+        ensureOk(out_builder->Finish(&out_arr), "mod: Finish");
+        return std::make_shared<arrow::ChunkedArray>(out_arr);
+    }
+
     const char* fn = nullptr;
     switch (e.op) {
         case BinaryExpr::Op::ADD: fn = "add";           break;
         case BinaryExpr::Op::SUB: fn = "subtract";      break;
         case BinaryExpr::Op::MUL: fn = "multiply";      break;
         case BinaryExpr::Op::DIV: fn = "divide";        break;
-        case BinaryExpr::Op::MOD: fn = "mod";           break;
         case BinaryExpr::Op::EQ:  fn = "equal";         break;
         case BinaryExpr::Op::NEQ: fn = "not_equal";     break;
         case BinaryExpr::Op::LT:  fn = "less";          break;
@@ -179,6 +211,7 @@ std::shared_ptr<arrow::ChunkedArray> evalBinaryExpr(
         case BinaryExpr::Op::GE:  fn = "greater_equal"; break;
         case BinaryExpr::Op::AND: fn = "and_kleene";    break;
         case BinaryExpr::Op::OR:  fn = "or_kleene";     break;
+        case BinaryExpr::Op::MOD: fn = nullptr;           break;
     }
 
     auto out = call(fn, { arrow::Datum(L), arrow::Datum(R) });
@@ -261,8 +294,6 @@ std::shared_ptr<arrow::ChunkedArray> evalAggExpr(
         case AggExpr::Func::MAX:   fn = "max";   break;
     }
 
-    // Some Arrow aggregate kernels require explicit options; supplying the
-    // defaults keeps behaviour consistent across Arrow versions.
     std::unique_ptr<arrow::compute::FunctionOptions> opts;
     if (e.func == AggExpr::Func::COUNT) {
         opts = std::make_unique<arrow::compute::CountOptions>();
@@ -299,9 +330,6 @@ std::shared_ptr<arrow::ChunkedArray> evalExprOn(
     throw std::runtime_error("evalExpr: unknown expression node");
 }
 
-// ---------------------------------------------------------------------------
-// Name inference for select(exprs) — pick the most descriptive name we can.
-// ---------------------------------------------------------------------------
 
 std::string inferName(const std::shared_ptr<Expr>& e, size_t index) {
     if (auto a = std::dynamic_pointer_cast<AliasExpr>(e)) return a->alias;
@@ -309,7 +337,6 @@ std::string inferName(const std::shared_ptr<Expr>& e, size_t index) {
     return "expr_" + std::to_string(index);
 }
 
-/// Build an arrow::Table from parallel (name, chunked) vectors.
 std::shared_ptr<arrow::Table> makeTable(
     const std::vector<std::string>& names,
     const std::vector<std::shared_ptr<arrow::ChunkedArray>>& cols) {
@@ -321,11 +348,8 @@ std::shared_ptr<arrow::Table> makeTable(
     return arrow::Table::Make(arrow::schema(fields), cols);
 }
 
-} // namespace
+} 
 
-// ---------------------------------------------------------------------------
-// EagerDataFrame
-// ---------------------------------------------------------------------------
 
 EagerDataFrame::EagerDataFrame() : table_(nullptr) {
     ensureComputeInitialized();
@@ -334,6 +358,13 @@ EagerDataFrame::EagerDataFrame() : table_(nullptr) {
 EagerDataFrame::EagerDataFrame(std::shared_ptr<arrow::Table> table)
     : table_(std::move(table)) {
     ensureComputeInitialized();
+}
+
+int64_t EagerDataFrame::num_rows() const { return numRows(); }
+
+int64_t EagerDataFrame::num_columns() const {
+    if (!table_) return 0;
+    return table_->num_columns();
 }
 
 std::vector<std::string> EagerDataFrame::columnNames() const {
@@ -365,9 +396,6 @@ std::shared_ptr<arrow::ChunkedArray> EagerDataFrame::evalExpr(
     return evalExprOn(table_, expr);
 }
 
-// ---------------------------------------------------------------------------
-// print()
-// ---------------------------------------------------------------------------
 
 void EagerDataFrame::print(int64_t maxRows) const {
     if (!table_) {
@@ -380,7 +408,6 @@ void EagerDataFrame::print(int64_t maxRows) const {
     const int64_t nrows = table_->num_rows();
     const int64_t shown = std::min<int64_t>(maxRows, nrows);
 
-    // First pass: measure column widths so the output stays aligned.
     std::vector<std::vector<std::string>> cells(shown, std::vector<std::string>(ncols));
     std::vector<size_t> widths(ncols, 0);
     for (int c = 0; c < ncols; ++c) widths[c] = schema->field(c)->name().size();
@@ -424,9 +451,6 @@ void EagerDataFrame::print(int64_t maxRows) const {
     }
 }
 
-// ---------------------------------------------------------------------------
-// select()
-// ---------------------------------------------------------------------------
 
 EagerDataFrame EagerDataFrame::select(const std::vector<std::string>& columns) const {
     if (!table_) return EagerDataFrame();
@@ -463,9 +487,6 @@ EagerDataFrame EagerDataFrame::select(const std::vector<ExprBuilder>& exprs) con
     return EagerDataFrame(makeTable(names, cols));
 }
 
-// ---------------------------------------------------------------------------
-// filter()
-// ---------------------------------------------------------------------------
 
 EagerDataFrame EagerDataFrame::filter(const ExprBuilder& predicate) const {
     if (!table_) return EagerDataFrame();
@@ -478,9 +499,6 @@ EagerDataFrame EagerDataFrame::filter(const ExprBuilder& predicate) const {
     return EagerDataFrame(out.table());
 }
 
-// ---------------------------------------------------------------------------
-// with_column()
-// ---------------------------------------------------------------------------
 
 EagerDataFrame EagerDataFrame::with_column(const std::string& name,
                                            const ExprBuilder& expr) const {
@@ -500,9 +518,6 @@ EagerDataFrame EagerDataFrame::with_column(const std::string& name,
     }
 }
 
-// ---------------------------------------------------------------------------
-// group_by()
-// ---------------------------------------------------------------------------
 
 EagerDataFrame EagerDataFrame::group_by(const std::vector<std::string>& keys) const {
     EagerDataFrame out(table_);
@@ -510,14 +525,9 @@ EagerDataFrame EagerDataFrame::group_by(const std::vector<std::string>& keys) co
     return out;
 }
 
-// ---------------------------------------------------------------------------
-// aggregate()
-// ---------------------------------------------------------------------------
 
 namespace {
 
-/// Compare the cell at row index `i` of the given key columns against row
-/// `j` — used to find contiguous group boundaries in a sorted table.
 bool keysDiffer(const std::vector<std::shared_ptr<arrow::Array>>& keys,
                 int64_t i, int64_t j) {
     for (const auto& k : keys) {
@@ -528,8 +538,6 @@ bool keysDiffer(const std::vector<std::shared_ptr<arrow::Array>>& keys,
     return false;
 }
 
-/// Materialise (chunked) key columns into single Arrow arrays so we can scan
-/// them cheaply with GetScalar() during group detection.
 std::vector<std::shared_ptr<arrow::Array>> combinedKeyArrays(
     const std::shared_ptr<arrow::Table>& table,
     const std::vector<std::string>& keys) {
@@ -545,13 +553,12 @@ std::vector<std::shared_ptr<arrow::Array>> combinedKeyArrays(
     return out;
 }
 
-} // namespace
+} 
 
 EagerDataFrame EagerDataFrame::aggregate(
     const std::map<std::string, ExprBuilder>& aggMap) const {
     if (!table_) return EagerDataFrame();
 
-    // --- Case 1: no grouping — each aggregation collapses to one row. -----
     if (group_keys_.empty()) {
         std::vector<std::string>                          names;
         std::vector<std::shared_ptr<arrow::ChunkedArray>> cols;
@@ -564,16 +571,13 @@ EagerDataFrame EagerDataFrame::aggregate(
         return EagerDataFrame(makeTable(names, cols));
     }
 
-    // --- Case 2: grouped — sort by keys and scan contiguous groups. -------
-    auto sorted_df = this->sort(group_keys_, /*ascending=*/true);
-    // Drop the group-by state so sort() / subsequent ops don't retain it.
+    auto sorted_df = this->sort(group_keys_, true);
     sorted_df.group_keys_.clear();
     auto sorted_table = sorted_df.table();
 
     auto key_arrays = combinedKeyArrays(sorted_table, group_keys_);
     const int64_t n = sorted_table->num_rows();
 
-    // Identify [start, end) spans where all key columns are equal.
     std::vector<std::pair<int64_t, int64_t>> groups;
     if (n > 0) {
         int64_t start = 0;
@@ -586,10 +590,6 @@ EagerDataFrame EagerDataFrame::aggregate(
         groups.emplace_back(start, n);
     }
 
-    // Collect per-group, per-aggregation scalar results. The first key_arrays
-    // entries become the group-key columns of the output; the remainder are
-    // the aggregated values, one column per aggMap entry (insertion order
-    // from std::map is alphabetical).
     const size_t k = group_keys_.size();
     const size_t a = aggMap.size();
 
@@ -600,11 +600,9 @@ EagerDataFrame EagerDataFrame::aggregate(
         aggMap.begin(), aggMap.end());
 
     for (const auto& [gs, ge] : groups) {
-        // Representative row for key columns (first row of group).
         for (size_t ki = 0; ki < k; ++ki) {
             out_cols[ki].push_back(key_arrays[ki]->GetScalar(gs).ValueOrDie());
         }
-        // Slice the table and evaluate each aggregation on that slice.
         auto slice = sorted_table->Slice(gs, ge - gs);
         for (size_t ai = 0; ai < a; ++ai) {
             auto chunked = evalExprOn(slice, aggList[ai].second.expr());
@@ -612,7 +610,6 @@ EagerDataFrame EagerDataFrame::aggregate(
         }
     }
 
-    // Build result columns from scalar vectors.
     std::vector<std::string>                          names;
     std::vector<std::shared_ptr<arrow::ChunkedArray>> chunked_cols;
     names.reserve(k + a);
@@ -646,9 +643,42 @@ EagerDataFrame EagerDataFrame::aggregate(
     return EagerDataFrame(makeTable(names, chunked_cols));
 }
 
-// ---------------------------------------------------------------------------
-// sort()
-// ---------------------------------------------------------------------------
+EagerDataFrame EagerDataFrame::aggregate(
+    const std::vector<std::pair<std::string, std::string>>& aggs) const {
+    std::map<std::string, ExprBuilder> agg_map;
+
+    for (const auto& [col_name, fn_name_raw] : aggs) {
+        std::string fn_name = fn_name_raw;
+        std::transform(
+            fn_name.begin(), fn_name.end(), fn_name.begin(),
+            [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+
+        ExprBuilder expr;
+        if (fn_name == "sum") expr = col(col_name).sum();
+        else if (fn_name == "mean") expr = col(col_name).mean();
+        else if (fn_name == "count") expr = col(col_name).count();
+        else if (fn_name == "min") expr = col(col_name).min();
+        else if (fn_name == "max") expr = col(col_name).max();
+        else {
+            throw std::invalid_argument("aggregate: unsupported function '" + fn_name_raw + "'");
+        }
+
+        std::string out_name = col_name + "_" + fn_name;
+        if (agg_map.find(out_name) != agg_map.end()) {
+            int suffix = 2;
+            std::string candidate;
+            do {
+                candidate = out_name + "_" + std::to_string(suffix++);
+            } while (agg_map.find(candidate) != agg_map.end());
+            out_name = candidate;
+        }
+
+        agg_map.emplace(std::move(out_name), std::move(expr));
+    }
+
+    return aggregate(agg_map);
+}
+
 
 EagerDataFrame EagerDataFrame::sort(const std::vector<std::string>& columns,
                                     bool ascending) const {
@@ -667,9 +697,6 @@ EagerDataFrame EagerDataFrame::sort(const std::vector<std::string>& columns,
     return EagerDataFrame(taken.table());
 }
 
-// ---------------------------------------------------------------------------
-// head()
-// ---------------------------------------------------------------------------
 
 EagerDataFrame EagerDataFrame::head(int64_t n) const {
     if (!table_) return EagerDataFrame();
@@ -677,14 +704,9 @@ EagerDataFrame EagerDataFrame::head(int64_t n) const {
     return EagerDataFrame(table_->Slice(0, take));
 }
 
-// ---------------------------------------------------------------------------
-// join() — manual hash join. Supports inner / left / right / outer.
-// ---------------------------------------------------------------------------
 
 namespace {
 
-/// Encode a row's join-key values into a printable, injective string so we
-/// can use it as a hash-map key. Null keys never match (SQL semantics).
 struct HashRow {
     std::string key;
     bool        has_null = false;
@@ -700,14 +722,12 @@ HashRow rowKey(const std::vector<std::shared_ptr<arrow::Array>>& keys,
             return r;
         }
         auto scalar = k->GetScalar(row).ValueOrDie();
-        oss << scalar->ToString() << '\x1f'; // unit separator
+        oss << scalar->ToString() << '\x1f'; 
     }
     r.key = oss.str();
     return r;
 }
 
-/// Append a single row from `src` at position `row` to a parallel vector of
-/// builders, one per column.
 void appendRow(const std::shared_ptr<arrow::Table>& src,
                int64_t row,
                std::vector<std::unique_ptr<arrow::ArrayBuilder>>& builders) {
@@ -718,13 +738,10 @@ void appendRow(const std::shared_ptr<arrow::Table>& src,
     }
 }
 
-/// Append one null per builder — used for unmatched rows in left/right/outer
-/// joins.
 void appendNulls(std::vector<std::unique_ptr<arrow::ArrayBuilder>>& builders) {
     for (auto& b : builders) ensureOk(b->AppendNull(), "join: AppendNull");
 }
 
-/// Construct parallel builders for every column in `schema`.
 std::vector<std::unique_ptr<arrow::ArrayBuilder>> buildersForSchema(
     const std::shared_ptr<arrow::Schema>& schema) {
     std::vector<std::unique_ptr<arrow::ArrayBuilder>> out;
@@ -735,9 +752,6 @@ std::vector<std::unique_ptr<arrow::ArrayBuilder>> buildersForSchema(
     return out;
 }
 
-/// Return the schema fields excluding the given set of key columns — used
-/// on the right table of a join so its join keys don't appear twice in the
-/// output.
 std::vector<std::shared_ptr<arrow::Field>> excludeKeys(
     const std::shared_ptr<arrow::Schema>& schema,
     const std::unordered_set<std::string>& drop) {
@@ -749,7 +763,7 @@ std::vector<std::shared_ptr<arrow::Field>> excludeKeys(
     return fs;
 }
 
-} // namespace
+} 
 
 EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
                                     const std::vector<std::string>& on,
@@ -762,7 +776,6 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
         throw std::invalid_argument("join: unsupported join type '" + how + "'");
     }
 
-    // Combine chunks so row-by-row scanning is simple.
     auto concatChunks = [](const std::shared_ptr<arrow::Table>& t,
                            const std::vector<std::string>& names) {
         std::vector<std::shared_ptr<arrow::Array>> out;
@@ -770,8 +783,13 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
         for (const auto& n : names) {
             auto c = t->GetColumnByName(n);
             if (!c) throw std::runtime_error("join: missing key '" + n + "'");
-            out.push_back(unwrap(arrow::Concatenate(c->chunks()),
-                                 "join: concat key '" + n + "'"));
+            if (c->num_chunks() == 0) {
+                out.push_back(unwrap(arrow::MakeArrayOfNull(c->type(), t->num_rows()),
+                                     "join: empty key fill '" + n + "'"));
+            } else {
+                out.push_back(unwrap(arrow::Concatenate(c->chunks()),
+                                     "join: concat key '" + n + "'"));
+            }
         }
         return out;
     };
@@ -779,7 +797,6 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
     auto left_keys  = concatChunks(table_,        on);
     auto right_keys = concatChunks(other.table_,  on);
 
-    // Build hash map from right-side row key → list of right row indices.
     std::unordered_map<std::string, std::vector<int64_t>> rhs_index;
     rhs_index.reserve(static_cast<size_t>(other.table_->num_rows()));
     for (int64_t r = 0; r < other.table_->num_rows(); ++r) {
@@ -788,7 +805,6 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
         rhs_index[k.key].push_back(r);
     }
 
-    // Build output schema = left schema + right columns (excluding join keys).
     std::unordered_set<std::string> keySet(on.begin(), on.end());
     auto right_extra_fields = excludeKeys(other.table_->schema(), keySet);
 
@@ -797,8 +813,6 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
     auto out_schema = arrow::schema(out_fields);
 
     auto left_builders  = buildersForSchema(table_->schema());
-    // Fresh builders for right extras (the helper above already made some but
-    // we also need to re-create for output to avoid re-using concat'd arrays).
     std::vector<std::unique_ptr<arrow::ArrayBuilder>> right_extra_builders;
     right_extra_builders.reserve(right_extra_fields.size());
     for (const auto& f : right_extra_fields) {
@@ -806,7 +820,6 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
             unwrap(arrow::MakeBuilder(f->type()), "MakeBuilder"));
     }
 
-    // Track which right rows got matched (needed for right / outer joins).
     std::vector<uint8_t> right_matched(other.table_->num_rows(), 0);
 
     auto appendRightExtras = [&](int64_t r) {
@@ -825,7 +838,6 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
         }
     };
 
-    // Scan left rows, probe rhs_index, emit matched / unmatched rows.
     for (int64_t l = 0; l < table_->num_rows(); ++l) {
         auto k = rowKey(left_keys, l);
         if (k.has_null) {
@@ -850,12 +862,9 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
         }
     }
 
-    // For right / outer joins, emit unmatched right rows with null left side.
     if (how == "right" || how == "outer") {
         for (int64_t r = 0; r < other.table_->num_rows(); ++r) {
             if (right_matched[r]) continue;
-            // Null for every left column *except* the join keys — fill those
-            // from the right side so the key column isn't accidentally null.
             for (int c = 0; c < table_->num_columns(); ++c) {
                 const auto& name = table_->schema()->field(c)->name();
                 if (keySet.count(name)) {
@@ -872,7 +881,6 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
         }
     }
 
-    // Finalise all builders and assemble the result table.
     std::vector<std::shared_ptr<arrow::ChunkedArray>> cols;
     cols.reserve(out_fields.size());
     for (auto& b : left_builders) {
@@ -889,9 +897,6 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
     return EagerDataFrame(arrow::Table::Make(out_schema, cols));
 }
 
-// ---------------------------------------------------------------------------
-// write_csv / write_parquet
-// ---------------------------------------------------------------------------
 
 void EagerDataFrame::write_csv(const std::string& path) const {
     if (!table_) throw std::runtime_error("write_csv: no table");
@@ -911,7 +916,7 @@ void EagerDataFrame::write_parquet(const std::string& path) const {
     auto outfile = unwrap(arrow::io::FileOutputStream::Open(path),
                           "write_parquet: open '" + path + "'");
     ensureOk(parquet::arrow::WriteTable(*table_, arrow::default_memory_pool(),
-                                        outfile, /*chunk_size=*/64 * 1024),
+                                        outfile, 64 * 1024),
              "write_parquet: WriteTable");
     ensureOk(outfile->Close(), "write_parquet: close");
 #else
@@ -921,4 +926,4 @@ void EagerDataFrame::write_parquet(const std::string& path) const {
 #endif
 }
 
-} // namespace dfl
+} 

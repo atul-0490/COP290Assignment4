@@ -10,8 +10,6 @@ namespace dfl {
 
 namespace {
 
-// Order numeric types from narrowest to widest so we can compute the wider
-// of two promotable types with a simple max().
 int numericRank(ColType t) {
     switch (t) {
         case ColType::INT32:   return 1;
@@ -27,7 +25,7 @@ int numericRank(ColType t) {
         "Incompatible types: " + colTypeToString(a) + " and " + colTypeToString(b));
 }
 
-} // namespace
+} 
 
 ColType promoteTypes(ColType a, ColType b) {
     if (a == b) return a;
@@ -35,21 +33,16 @@ ColType promoteTypes(ColType a, ColType b) {
     const bool aNum = isNumeric(a);
     const bool bNum = isNumeric(b);
 
-    // int + float → float; otherwise widest numeric wins.
     if (aNum && bNum) {
         const bool aFloat = (a == ColType::FLOAT32 || a == ColType::FLOAT64);
         const bool bFloat = (b == ColType::FLOAT32 || b == ColType::FLOAT64);
         if (aFloat || bFloat) {
-            // Pick the widest float seen; if only one side is float, we still
-            // widen to at least float64 to keep precision predictable.
             if (a == ColType::FLOAT64 || b == ColType::FLOAT64) return ColType::FLOAT64;
             return ColType::FLOAT32;
         }
-        // Both are int: pick the wider integer.
         return numericRank(a) >= numericRank(b) ? a : b;
     }
 
-    // Any mix of numeric / string / boolean is an error.
     throwIncompatible(a, b);
 }
 
@@ -94,4 +87,4 @@ ColType arrowTypeToColType(const std::shared_ptr<arrow::DataType>& t) {
     }
 }
 
-} // namespace dfl
+} 
