@@ -12,7 +12,10 @@
 #include "EagerDataFrame.hpp"
 #include "LazyDataFrame.hpp"
 
-namespace dfl {
+
+
+namespace dfl
+{
 
 EagerDataFrame read_csv(const std::string& path);
 

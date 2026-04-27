@@ -4,7 +4,10 @@
 
 #include "LogicalPlan.hpp"
 
-namespace dfl {
+
+
+namespace dfl
+{
 
 class QueryOptimizer {
 public:

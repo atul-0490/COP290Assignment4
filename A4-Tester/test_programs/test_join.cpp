@@ -40,17 +40,5 @@ int main(int argc, char* argv[]) {
         std::cout << "ERROR:join_left:" << e.what() << std::endl;
     }
 
-    // --- Right join ---
-    try {
-        auto t0 = std::chrono::high_resolution_clock::now();
-        auto result = left.join(right, {"id"}, "right");
-        auto t1 = std::chrono::high_resolution_clock::now();
-        std::cout << "TIMING:join_right:" << std::chrono::duration<double, std::milli>(t1 - t0).count() << std::endl;
-        result.write_csv(output_dir + "/join_right.csv");
-        std::cout << "PASS:join_right" << std::endl;
-    } catch (const std::exception& e) {
-        std::cout << "ERROR:join_right:" << e.what() << std::endl;
-    }
-
     return 0;
 }

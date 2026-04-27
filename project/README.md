@@ -1,190 +1,200 @@
 # DataFrameLib
 
-A high-performance C++17 DataFrame library built on Apache Arrow, inspired
-by Pandas (eager execution) and Polars (lazy execution with a query
-optimiser). Submitted for **COP290 – Design Practices, Assignment 4**.
+A practical C++17 DataFrame library built on Apache Arrow with both eager (immediate)
+and lazy (optimized) execution modes. Includes a query optimizer with five rewrite rules.
+
+**COP290 – Design Practices, Assignment 4**
 
 ---
 
-## Requirements
+## Getting started
+
+### Prerequisites
 
 - **CMake** ≥ 3.20
 - **C++17 compiler** (GCC 11+ or Clang 13+)
-- **Apache Arrow** C++ library, with Parquet support
-- **Graphviz** (optional — used by `explain()` to render plan diagrams)
+- **Apache Arrow** C++ development headers (with Parquet)
+- **Graphviz** (optional, for `explain()` visualization)
 
 ### Install dependencies
 
-**Ubuntu / Debian**
+**Ubuntu / Debian:**
 
 ```bash
-sudo apt install -y build-essential cmake pkg-config \
-                    libarrow-dev libparquet-dev \
-                    graphviz libgraphviz-dev
+sudo apt-get update
+sudo apt-get install -y build-essential cmake pkg-config \
+  libarrow-dev libparquet-dev graphviz libgraphviz-dev
 ```
 
-**macOS (Homebrew)**
+**macOS (Homebrew):**
 
 ```bash
 brew install cmake apache-arrow graphviz
 ```
 
----
-
-## Build Instructions
+### Build the library
 
 From the `project/` directory:
 
 ```bash
-mkdir build
+mkdir -p build
 cd build
 cmake ..
 make -j$(nproc)
 ```
 
-This produces:
+Output:
+- `build/student_build/libdataframelib.a` — static library
+- `build/main` — demo executable
+- `build/tests/test_main` — test suite (32 tests)
 
-- `libdataframelib.a`       — the static library
-- `main`                    — a minimal demo binary
-- `tests/test_main`         — the full test suite (31 tests)
-
-## Run Tests
+### Run Tests
 
 ```bash
 cd build
 ./tests/test_main
 ```
 
-The run prints per-test status and ends with
-`ALL N TESTS PASSED` on success.
+All 32 tests validate correctness, null handling, optimizations, and edge cases.
+Output ends with `ALL 32 TESTS PASSED` on success.
 
-## Run the Demo
+### Run the Demo
 
 ```bash
 cd build
 ./main
 ```
 
-`main.cpp` exercises every major feature (eager + lazy, joins, groupby,
-expressions, optimiser) as a quick smoke demo.
+Demo exercises both eager and lazy modes, joins, groupby, expressions, and the optimizer.
 
 ---
 
-## API Quick Reference
+## Usage examples
 
-### Reading data
+### Eager execution (immediate)
 
 ```cpp
-dfl::read_csv(path)     → EagerDataFrame
-dfl::read_parquet(path) → EagerDataFrame
-dfl::scan_csv(path)     → LazyDataFrame
-dfl::scan_parquet(path) → LazyDataFrame
-dfl::from_columns(map)  → EagerDataFrame
+#include "dataframelib/dataframelib.h"
+using namespace dfl;
+
+// Load CSV
+auto df = read_csv("data.csv");
+
+// Select columns
+auto subset = df.select({"id", "name", "salary"});
+
+// Filter
+auto high_earners = subset.filter(col("salary") > lit<double>(50000.0));
+
+// Add computed column
+auto with_tax = high_earners.with_column("tax", 
+                                        col("salary") * lit<double>(0.2));
+
+// Write result
+with_tax.write_csv("output.csv");
 ```
 
-### EagerDataFrame (immediate execution)
+### Lazy execution (optimized)
 
 ```cpp
-select({"a", "b"})                    // project columns
-select({col("a")+col("b")})           // project expressions
-filter(col("x") > lit(10))            // keep matching rows
-with_column("c", col("a")*lit(2))    // add/replace a column
-group_by({"k"})                       // declare grouping
-aggregate({{"s", col("x").sum()}})    // reduce to one row per group
-join(other, {"id"}, "inner")          // equi-join (inner/left/right/outer)
-sort({"x"}, ascending=true)           // order rows
-head(n)                               // first n rows
-write_csv(path) / write_parquet(path) // persist to disk
-print(maxRows)                        // pretty-print
+// Same operators, but deferred execution
+auto result = scan_csv("sales.csv")
+  .filter(col("amount") > lit<int64_t>(1000))
+  .with_column("commission", col("amount") * lit<double>(0.05))
+  .group_by({"salesperson"})
+  .aggregate({{"total", col("amount").sum()},
+              {"count", col("amount").count()}})
+  .sort({"total"}, false)  // descending
+  .head(10)
+  .collect();  // optimizer runs here, then executes
+
+result.print(10);
 ```
 
-### LazyDataFrame (deferred execution)
-
-The same operator surface as `EagerDataFrame` but every call extends a
-logical plan DAG. Nothing executes until `collect()` is called.
+### Expressions
 
 ```cpp
-collect()        // run with optimizer, return EagerDataFrame
-collect_raw()    // run WITHOUT optimizer (benchmarking)
-explain(path)    // render plan DAG to a .png via Graphviz
-plan()           // inspect the raw plan root
-sink_csv(path) / sink_parquet(path)
-```
+// Binary operations
+col("x") + col("y");
+col("price") * lit<double>(1.1);  // 10% markup
 
-### Expression DSL
+// Comparisons
+col("age") > lit<int32_t>(18);
+col("status") == lit("active");
 
-```cpp
-col("x")                 // column reference
-lit(3), lit(3.14), lit("hi"), lit(true)
-x + y, x - y, x * y, x / y, x % y
-x == y, x != y, x < y, x <= y, x > y, x >= y
-x & y   (AND),  x | y   (OR),  ~x   (NOT)
-x.abs(), x.is_null(), x.is_not_null(), x.alias("z")
-x.length(), x.contains("s"), x.starts_with("s"), x.ends_with("s")
-x.to_lower(), x.to_upper()
-x.sum(), x.mean(), x.count(), x.min(), x.max()    // aggregations
+// String functions
+col("name").to_upper();
+col("email").contains("@");
+
+// Aggregations
+col("salary").sum();
+col("score").mean();
+col("id").count();
 ```
 
 ---
 
-## Architecture Overview
+## Architecture
 
-DataFrameLib is structured as three layers on top of Apache Arrow.
+**Three-layer design:**
 
-**EagerDataFrame** is a thin, immutable wrapper around
-`std::shared_ptr<arrow::Table>`. Every operation copies the pointer
-and runs Arrow's compute kernels directly, so the API feels like
-Pandas but data-flow is zero-copy and vectorised.
+1. **EagerDataFrame** — thin wrapper around `arrow::Table`. All operators 
+   call Arrow compute kernels and return immediately. Immutable, zero-copy 
+   semantics.
 
-**LazyDataFrame** builds a logical plan instead of running anything.
-Each operation appends a `LogicalNode` (e.g. `FilterNode`, `JoinNode`)
-to a `shared_ptr`-based DAG. The root is handed to the
-**QueryOptimizer** on `collect()`, which runs five rewrite rules to a
-fixed point (max 10 iterations) before the executor walks the DAG
-depth-first and materialises the result back into an
-`EagerDataFrame`.
+2. **LazyDataFrame** — builds a logical plan DAG. Every operator appends 
+   a `LogicalNode` and returns a new lazy frame. Nothing executes until 
+   `collect()` is called.
 
-The **expression system** is a small AST (`ColExpr`, `LitExpr`,
-`BinaryExpr`, `UnaryExpr`, `AggExpr`, `StringExpr`, `AliasExpr`) wrapped
-by the operator-overloading `ExprBuilder`. Both execution modes share
-the same expression evaluator (`EagerDataFrame::evalExpr`), which maps
-onto Arrow Compute. This is what lets the `QueryOptimizer` constant-fold
-expressions against a synthetic 1-row table.
+3. **QueryOptimizer** — rewrites the logical plan using five rules applied 
+   to a fixed point, then a DFS executor walks the optimized DAG and 
+   materializes the result via eager operators.
+
+**Expression system:**
+- Small AST: `ColExpr`, `LitExpr`, `BinaryExpr`, `UnaryExpr`, `AggExpr`, 
+  `StringExpr`, `AliasExpr`
+- User-facing: operator overloads on `ExprBuilder`, `col()` and `lit()` helpers
+- Shared evaluator for both eager and lazy modes (enables constant folding)
 
 ---
 
-## Query Optimizations Implemented
+## Optimizations
 
-1. **Predicate Pushdown** — push `FilterNode`s below `JoinNode` and
-   `GroupByNode` when the predicate references only one side / only
-   group keys, so fewer rows flow upward.
-2. **Projection Pushdown** — propagate the set of required columns
-   top-down and annotate `ScanNode::projected_columns` so Parquet /
-   CSV reads only the columns actually used.
-3. **Constant Folding** — evaluate fully-constant sub-expressions at
-   plan time (`lit(3)+lit(4) → lit(7)`).
-4. **Expression Simplification** — algebraic identities
-   (`x+0 → x`, `x*1 → x`, `~~x → x`, `x AND true → x`, …).
-5. **Limit Pushdown** — swap `LimitNode` below row-preserving nodes
-   (`SelectNode`, `WithColNode`) and absorb it into
-   `ScanNode::row_limit`.
+1. **Predicate Pushdown** — move filters below joins/groupby when safe
+2. **Projection Pushdown** — only read columns actually used
+3. **Constant Folding** — evaluate `lit(3) + lit(4)` → `lit(7)` at plan time
+4. **Expression Simplification** — apply identities like `x + 0 → x`
+5. **Limit Pushdown** — absorb `head(n)` into scans
 
-On the included benchmark (scan → join → filter → select → head over
-two 20 000-row CSVs) the optimiser produces an end-to-end speedup of
-**~2×** vs `collect_raw()`.
+Typical speedup: **1.5–3×** depending on data and predicate selectivity.
 
 ---
 
-## Repository Layout
+## File structure
 
 ```
 project/
-├── CMakeLists.txt
-├── README.md
-├── report.md / report.pdf
-├── include/              ← public API headers (Doxygen-documented)
-├── src/                  ← library sources
-├── tests/test_main.cpp   ← 31 correctness + benchmark tests
-├── main.cpp              ← demo
-└── prepare_submission.sh ← clean + tar packaging helper
+├── include/
+│   ├── DataFrame.hpp          (base interface)
+│   ├── EagerDataFrame.hpp     (eager execution)
+│   ├── LazyDataFrame.hpp      (lazy execution)
+│   ├── Expr.hpp               (expression AST)
+│   ├── LogicalPlan.hpp        (plan nodes)
+│   ├── QueryOptimizer.hpp     (rewrite rules)
+│   ├── IO.hpp                 (read/write)
+│   ├── TypeUtils.hpp          (type system)
+│   └── dataframelib/dataframelib.h  (public header)
+├── src/
+│   ├── EagerDataFrame.cpp
+│   ├── LazyDataFrame.cpp
+│   ├── Expr.cpp
+│   ├── LogicalPlan.cpp
+│   ├── QueryOptimizer.cpp
+│   ├── IO.cpp
+│   ├── TypeUtils.cpp
+│   └── internal/              (utility internals)
+├── tests/
+│   └── test_main.cpp          (32 tests)
+├── main.cpp                   (demo)
+└── CMakeLists.txt
 ```

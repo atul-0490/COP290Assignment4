@@ -1,13 +1,13 @@
 {
-  "passed": 80,
-  "total": 80,
+  "passed": 79,
+  "total": 79,
   "tests": [
     {
       "program": "test_io",
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 22.64,
+      "runtime_ms": 565.84,
       "error": null,
       "subtests": [
         {
@@ -27,11 +27,11 @@
         }
       ],
       "timing": {
-        "read_csv": 4.15933,
-        "write_csv": 1.45384,
-        "write_parquet": 1.66229,
-        "read_parquet": 0.504705,
-        "read_parquet_direct": 0.537049
+        "read_csv": 0.662333,
+        "write_csv": 1.55987,
+        "write_parquet": 0.653208,
+        "read_parquet": 2.94033,
+        "read_parquet_direct": 0.1375
       }
     },
     {
@@ -39,7 +39,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 13.96,
+      "runtime_ms": 506.58,
       "error": null,
       "subtests": [
         {
@@ -69,11 +69,11 @@
         }
       ],
       "timing": {
-        "select": 0.008734,
-        "filter_gt": 0.21432,
-        "filter_eq": 0.10475,
-        "filter_compound": 0.092237,
-        "filter_select": 0.083344
+        "select": 0.015958,
+        "filter_gt": 0.526875,
+        "filter_eq": 0.047958,
+        "filter_compound": 0.06125,
+        "filter_select": 0.041958
       }
     },
     {
@@ -81,7 +81,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 19.76,
+      "runtime_ms": 487.55,
       "error": null,
       "subtests": [
         {
@@ -96,8 +96,8 @@
         }
       ],
       "timing": {
-        "groupby_single": 0.925543,
-        "groupby_multi": 1.66856
+        "groupby_single": 2.10854,
+        "groupby_multi": 0.53175
       }
     },
     {
@@ -105,7 +105,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 19.95,
+      "runtime_ms": 34.3,
       "error": null,
       "subtests": [
         {
@@ -117,17 +117,11 @@
           "name": "join_left",
           "passed": true,
           "message": "OK"
-        },
-        {
-          "name": "join_right",
-          "passed": true,
-          "message": "OK"
         }
       ],
       "timing": {
-        "join_inner": 1.23969,
-        "join_left": 1.25954,
-        "join_right": 1.11401
+        "join_inner": 0.273292,
+        "join_left": 0.271291
       }
     },
     {
@@ -135,7 +129,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 15.72,
+      "runtime_ms": 464.57,
       "error": null,
       "subtests": [
         {
@@ -160,10 +154,10 @@
         }
       ],
       "timing": {
-        "expr_bonus": 0.102196,
-        "expr_abs": 0.036909,
-        "expr_complex_filter": 0.15981,
-        "expr_arith_chain": 0.080029
+        "expr_bonus": 1.407,
+        "expr_abs": 0.186709,
+        "expr_complex_filter": 0.084917,
+        "expr_arith_chain": 0.106208
       }
     },
     {
@@ -171,7 +165,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 16.82,
+      "runtime_ms": 455.22,
       "error": null,
       "subtests": [
         {
@@ -206,12 +200,12 @@
         }
       ],
       "timing": {
-        "str_contains": 0.114566,
-        "str_upper": 4.19091,
-        "str_lower": 0.032341,
-        "str_startswith": 0.076537,
-        "str_endswith": 0.033785,
-        "str_length": 0.014438
+        "str_contains": 1.24167,
+        "str_upper": 3.553,
+        "str_lower": 0.01075,
+        "str_startswith": 0.024875,
+        "str_endswith": 0.017208,
+        "str_length": 0.018125
       }
     },
     {
@@ -219,7 +213,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 13.67,
+      "runtime_ms": 465.56,
       "error": null,
       "subtests": [
         {
@@ -244,10 +238,10 @@
         }
       ],
       "timing": {
-        "sort_asc": 0.301963,
-        "sort_desc": 0.151523,
-        "head": 0.009693,
-        "sort_head": 0.134826
+        "sort_asc": 1.79483,
+        "sort_desc": 0.080709,
+        "head": 0.001708,
+        "sort_head": 0.063458
       }
     },
     {
@@ -255,7 +249,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 13.57,
+      "runtime_ms": 513.47,
       "error": null,
       "subtests": [
         {
@@ -270,8 +264,8 @@
         }
       ],
       "timing": {
-        "wc_doubled": 0.522169,
-        "wc_sum": 0.032939
+        "wc_doubled": 1.33196,
+        "wc_sum": 0.013875
       }
     },
     {
@@ -279,7 +273,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 90.23,
+      "runtime_ms": 753.44,
       "error": null,
       "subtests": [
         {
@@ -314,11 +308,11 @@
         }
       ],
       "timing": {
-        "lazy_filter": 11.3823,
-        "lazy_select": 1.88624,
-        "lazy_groupby": 3.02809,
-        "lazy_chain": 2.78794,
-        "lazy_sink": 2.51643
+        "lazy_filter": 2.17525,
+        "lazy_select": 0.359209,
+        "lazy_groupby": 0.592583,
+        "lazy_chain": 0.485125,
+        "lazy_sink": 0.614917
       }
     },
     {
@@ -326,7 +320,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 19.77,
+      "runtime_ms": 523.15,
       "error": null,
       "subtests": [
         {
@@ -351,10 +345,10 @@
         }
       ],
       "timing": {
-        "is_null": 0.252561,
-        "is_not_null": 0.156665,
-        "null_arith": 0.091338,
-        "null_filter_compute": 0.066331
+        "is_null": 1.19188,
+        "is_not_null": 0.018417,
+        "null_arith": 0.012292,
+        "null_filter_compute": 0.019458
       }
     },
     {
@@ -362,7 +356,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 24.5,
+      "runtime_ms": 502.76,
       "error": null,
       "subtests": [
         {
@@ -407,14 +401,14 @@
         }
       ],
       "timing": {
-        "edge_empty_filter": 0.769292,
-        "edge_head_zero": 0.008646,
-        "edge_head_large": 0.0035,
-        "edge_select_single": 0.00672,
-        "edge_replace_col": 0.231433,
-        "edge_filter_all": 0.377138,
-        "edge_single_group": 0.462895,
-        "edge_double_sort": 0.479418
+        "edge_empty_filter": 1.361,
+        "edge_head_zero": 0.002083,
+        "edge_head_large": 0.001334,
+        "edge_select_single": 0.001084,
+        "edge_replace_col": 0.013541,
+        "edge_filter_all": 0.069417,
+        "edge_single_group": 0.131833,
+        "edge_double_sort": 1.06021
       }
     },
     {
@@ -422,7 +416,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 15.62,
+      "runtime_ms": 501.41,
       "error": null,
       "subtests": [
         {
@@ -477,16 +471,16 @@
         }
       ],
       "timing": {
-        "ops_subtract": 0.403475,
-        "ops_divide": 0.037855,
-        "ops_modulo": 0.633853,
-        "ops_less": 0.083316,
-        "ops_less_equal": 0.05571,
-        "ops_greater_equal": 0.056793,
-        "ops_not_equal": 0.096615,
-        "ops_not": 0.066831,
-        "ops_nested_arith": 0.064872,
-        "ops_bool_combo": 0.126325
+        "ops_subtract": 1.398,
+        "ops_divide": 0.010291,
+        "ops_modulo": 0.037625,
+        "ops_less": 0.042166,
+        "ops_less_equal": 0.032,
+        "ops_greater_equal": 0.022459,
+        "ops_not_equal": 0.060791,
+        "ops_not": 0.026875,
+        "ops_nested_arith": 0.020542,
+        "ops_bool_combo": 0.055875
       }
     },
     {
@@ -494,7 +488,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 17.17,
+      "runtime_ms": 506.66,
       "error": null,
       "subtests": [
         {
@@ -519,10 +513,10 @@
         }
       ],
       "timing": {
-        "join_outer": 1.02534,
-        "join_empty_inner": 0.312268,
-        "join_self": 1.6274,
-        "join_right_nulls": 0.551993
+        "join_outer": 0.492917,
+        "join_empty_inner": 0.141,
+        "join_self": 0.650875,
+        "join_right_nulls": 0.217791
       }
     },
     {
@@ -530,7 +524,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 15.85,
+      "runtime_ms": 509.96,
       "error": null,
       "subtests": [
         {
@@ -560,11 +554,11 @@
         }
       ],
       "timing": {
-        "chain_filter_sort_head": 0.427697,
-        "chain_wc_filter_gb": 0.488325,
-        "chain_multi_filter": 0.256094,
-        "chain_select_wc": 0.037016,
-        "chain_full_pipeline": 0.347058
+        "chain_filter_sort_head": 1.42875,
+        "chain_wc_filter_gb": 0.23375,
+        "chain_multi_filter": 0.142958,
+        "chain_select_wc": 0.011042,
+        "chain_full_pipeline": 0.139208
       }
     },
     {
@@ -572,7 +566,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 19.36,
+      "runtime_ms": 505.79,
       "error": null,
       "subtests": [
         {
@@ -602,11 +596,11 @@
         }
       ],
       "timing": {
-        "lazy_join": 5.58,
-        "lazy_with_column": 1.40501,
-        "lazy_sort_head": 0.895643,
-        "lazy_predicate_push": 0.733053,
-        "lazy_full_pipeline": 1.06
+        "lazy_join": 1.164,
+        "lazy_with_column": 0.487334,
+        "lazy_sort_head": 0.459458,
+        "lazy_predicate_push": 0.443333,
+        "lazy_full_pipeline": 0.508792
       }
     },
     {
@@ -614,7 +608,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 107.06,
+      "runtime_ms": 542.04,
       "error": null,
       "subtests": [
         {
@@ -639,11 +633,11 @@
         }
       ],
       "timing": {
-        "perf_read_large": 11.4412,
-        "perf_filter": 1.57334,
-        "perf_groupby": 44.2694,
-        "perf_sort": 14.1106,
-        "perf_lazy_chain": 14.6335
+        "perf_read_large": 4.70388,
+        "perf_filter": 1.87904,
+        "perf_groupby": 15.5752,
+        "perf_sort": 9.2485,
+        "perf_lazy_chain": 8.39833
       }
     },
     {
@@ -651,7 +645,7 @@
       "compiled": true,
       "ran": true,
       "exit_code": 0,
-      "runtime_ms": 8.71,
+      "runtime_ms": 463.74,
       "error": null,
       "subtests": [
         {
@@ -681,11 +675,11 @@
         }
       ],
       "timing": {
-        "fc_simple": 2.0193,
-        "fc_filter": 0.072106,
-        "fc_with_column": 0.021881,
-        "fc_empty": 0.001872,
-        "fc_select": 0.007501
+        "fc_simple": 0.091709,
+        "fc_filter": 0.0625,
+        "fc_with_column": 0.020834,
+        "fc_empty": 0.000917,
+        "fc_select": 0.004125
       }
     }
   ]

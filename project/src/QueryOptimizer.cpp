@@ -4,6 +4,7 @@
 #include <fstream>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -20,7 +21,10 @@
 #include "EagerDataFrame.hpp"  
 #include "LogicalPlan.hpp"
 
-namespace dfl {
+
+
+namespace dfl
+{
 
 
 namespace {
@@ -187,8 +191,7 @@ std::set<std::string> readParquetColumns(const std::string& path) {
 #ifdef DFL_HAVE_PARQUET
     auto infile_r = arrow::io::ReadableFile::Open(path);
     if (!infile_r.ok()) return out;
-    auto reader_r = parquet::arrow::OpenFile(
-        infile_r.ValueOrDie(), arrow::default_memory_pool());
+    auto reader_r = parquet::arrow::OpenFile(infile_r.ValueOrDie(), arrow::default_memory_pool());
     if (!reader_r.ok()) return out;
     std::shared_ptr<arrow::Schema> schema;
     if (!reader_r.ValueOrDie()->GetSchema(&schema).ok()) return out;
@@ -200,12 +203,20 @@ std::set<std::string> readParquetColumns(const std::string& path) {
 }
 
 std::set<std::string> scanOutputColumns(const ScanNode& s) {
+    static std::mutex cache_mu;
     static std::unordered_map<std::string, std::set<std::string>> cache;
+
     const std::string key = (s.isParquet ? "pq:" : "csv:") + s.path;
-    auto it = cache.find(key);
-    if (it != cache.end()) return it->second;
+    {
+        std::lock_guard<std::mutex> lock(cache_mu);
+        auto it = cache.find(key);
+        if (it != cache.end()) return it->second;
+    }
     auto cols = s.isParquet ? readParquetColumns(s.path) : readCsvHeader(s.path);
-    cache[key] = cols;
+    {
+        std::lock_guard<std::mutex> lock(cache_mu);
+        cache[key] = cols;
+    }
     return cols;
 }
 
@@ -242,8 +253,7 @@ std::optional<std::set<std::string>> outputColumns(
     }
 
     if (auto p = std::dynamic_pointer_cast<WithColNode>(node)) {
-        auto child = p->children.empty() ? std::optional<std::set<std::string>>{}
-                                         : outputColumns(p->children[0]);
+        auto child = p->children.empty() ? std::optional<std::set<std::string>>{} : outputColumns(p->children[0]);
         if (!child) return std::nullopt;
         child->insert(p->name);
         return child;
@@ -252,9 +262,7 @@ std::optional<std::set<std::string>> outputColumns(
     if (auto p = std::dynamic_pointer_cast<AggNode>(node)) {
         std::set<std::string> out;
         if (!p->children.empty()) {
-            if (auto g = std::dynamic_pointer_cast<GroupByNode>(p->children[0])) {
-                out.insert(g->keys.begin(), g->keys.end());
-            }
+            if (auto g = std::dynamic_pointer_cast<GroupByNode>(p->children[0])) {out.insert(g->keys.begin(), g->keys.end());}
         }
         for (const auto& [k, _] : p->aggMap) out.insert(k);
         return out;
@@ -311,11 +319,9 @@ std::shared_ptr<LogicalNode> cloneNode(const std::shared_ptr<LogicalNode>& n) {
 }
 
 
-bool planEquals(const std::shared_ptr<LogicalNode>& a,
-                const std::shared_ptr<LogicalNode>& b);
+bool planEquals(const std::shared_ptr<LogicalNode>& a, const std::shared_ptr<LogicalNode>& b);
 
-bool childrenEqual(const std::shared_ptr<LogicalNode>& a,
-                   const std::shared_ptr<LogicalNode>& b) {
+bool childrenEqual(const std::shared_ptr<LogicalNode>& a, const std::shared_ptr<LogicalNode>& b) {
     if (a->children.size() != b->children.size()) return false;
     for (size_t i = 0; i < a->children.size(); ++i) {
         if (!planEquals(a->children[i], b->children[i])) return false;
@@ -331,9 +337,7 @@ bool planEquals(const std::shared_ptr<LogicalNode>& a,
     if (auto pa = std::dynamic_pointer_cast<ScanNode>(a)) {
         auto pb = std::dynamic_pointer_cast<ScanNode>(b);
         if (!pb) return false;
-        return pa->path == pb->path && pa->isParquet == pb->isParquet &&
-               pa->projected_columns == pb->projected_columns &&
-               pa->row_limit == pb->row_limit;
+        return pa->path == pb->path && pa->isParquet == pb->isParquet &&pa->projected_columns == pb->projected_columns &&pa->row_limit == pb->row_limit;
     }
     if (auto pa = std::dynamic_pointer_cast<FilterNode>(a)) {
         auto pb = std::dynamic_pointer_cast<FilterNode>(b);
@@ -349,9 +353,7 @@ bool planEquals(const std::shared_ptr<LogicalNode>& a,
     }
     if (auto pa = std::dynamic_pointer_cast<WithColNode>(a)) {
         auto pb = std::dynamic_pointer_cast<WithColNode>(b);
-        return pb && pa->name == pb->name &&
-               exprEquals(pa->expr.expr(), pb->expr.expr()) &&
-               childrenEqual(a, b);
+        return pb && pa->name == pb->name &&exprEquals(pa->expr.expr(), pb->expr.expr()) &&childrenEqual(a, b);
     }
     if (auto pa = std::dynamic_pointer_cast<GroupByNode>(a)) {
         auto pb = std::dynamic_pointer_cast<GroupByNode>(b);
@@ -363,22 +365,19 @@ bool planEquals(const std::shared_ptr<LogicalNode>& a,
         auto it1 = pa->aggMap.begin();
         auto it2 = pb->aggMap.begin();
         while (it1 != pa->aggMap.end()) {
-            if (it1->first != it2->first ||
-                !exprEquals(it1->second.expr(), it2->second.expr())) return false;
-            ++it1; ++it2;
+            if (it1->first != it2->first || !exprEquals(it1->second.expr(), it2->second.expr())) return false;
+            ++it1; 
+            ++it2;
         }
         return childrenEqual(a, b);
     }
     if (auto pa = std::dynamic_pointer_cast<JoinNode>(a)) {
         auto pb = std::dynamic_pointer_cast<JoinNode>(b);
-        return pb && pa->on == pb->on && pa->how == pb->how &&
-               planEquals(pa->right, pb->right) &&
-               childrenEqual(a, b);
+        return pb && pa->on == pb->on && pa->how == pb->how && planEquals(pa->right, pb->right) && childrenEqual(a, b);
     }
     if (auto pa = std::dynamic_pointer_cast<SortNode>(a)) {
         auto pb = std::dynamic_pointer_cast<SortNode>(b);
-        return pb && pa->columns == pb->columns && pa->ascending == pb->ascending &&
-               childrenEqual(a, b);
+        return pb && pa->columns == pb->columns && pa->ascending == pb->ascending &&childrenEqual(a, b);
     }
     if (auto pa = std::dynamic_pointer_cast<LimitNode>(a)) {
         auto pb = std::dynamic_pointer_cast<LimitNode>(b);
@@ -386,8 +385,7 @@ bool planEquals(const std::shared_ptr<LogicalNode>& a,
     }
     if (auto pa = std::dynamic_pointer_cast<SinkNode>(a)) {
         auto pb = std::dynamic_pointer_cast<SinkNode>(b);
-        return pb && pa->path == pb->path && pa->isParquet == pb->isParquet &&
-               childrenEqual(a, b);
+        return pb && pa->path == pb->path && pa->isParquet == pb->isParquet &&childrenEqual(a, b);
     }
     return false;
 }
@@ -402,8 +400,7 @@ std::shared_ptr<Expr> evalToLit(const std::shared_ptr<Expr>& e) {
         (void)b.Append(0);
         std::shared_ptr<arrow::Array> arr;
         (void)b.Finish(&arr);
-        auto table = arrow::Table::Make(empty_schema,
-            { std::make_shared<arrow::ChunkedArray>(arr) });
+        auto table = arrow::Table::Make(empty_schema,{ std::make_shared<arrow::ChunkedArray>(arr) });
         EagerDataFrame df(table);
         auto chunked = df.evalExpr(e);
         auto scalar  = chunked->GetScalar(0).ValueOrDie();
@@ -706,9 +703,7 @@ std::shared_ptr<LogicalNode> predicatePushdownRec(
 }
 
 
-std::shared_ptr<LogicalNode> projectionPushdownRec(
-    const std::shared_ptr<LogicalNode>& node,
-    const std::optional<std::set<std::string>>& required);
+std::shared_ptr<LogicalNode> projectionPushdownRec( const std::shared_ptr<LogicalNode>& node, const std::optional<std::set<std::string>>& required);
 
 std::optional<std::set<std::string>> augment(
     const std::optional<std::set<std::string>>& req,
@@ -725,6 +720,8 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
     if (!node) return node;
 
     if (auto s = std::dynamic_pointer_cast<ScanNode>(node)) {
+        // NOTE: we can only push projections into scans for files we can
+        // inspect the schema of ahead of time. For in-memory frames we skip.
         if (!required) return node;
 
         auto file_cols = scanOutputColumns(*s);
@@ -748,9 +745,7 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
     if (auto p = std::dynamic_pointer_cast<SelectNode>(node)) {
         std::set<std::string> needs;
         for (const auto& eb : p->columns) collectColRefs(eb.expr(), needs);
-        auto newChild = p->children.empty()
-            ? std::shared_ptr<LogicalNode>{}
-            : projectionPushdownRec(p->children[0], needs);
+        auto newChild = p->children.empty() ? std::shared_ptr<LogicalNode>{} : projectionPushdownRec(p->children[0], needs);
         if (!newChild || newChild == p->children.front()) return node;
         auto out = std::make_shared<SelectNode>(*p);
         out->children = { newChild };
@@ -760,9 +755,7 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
     if (auto p = std::dynamic_pointer_cast<FilterNode>(node)) {
         auto pred_refs = colRefs(p->predicate);
         auto child_req = augment(required, pred_refs);
-        auto newChild = p->children.empty()
-            ? std::shared_ptr<LogicalNode>{}
-            : projectionPushdownRec(p->children[0], child_req);
+        auto newChild = p->children.empty() ? std::shared_ptr<LogicalNode>{} : projectionPushdownRec(p->children[0], child_req);
         if (!newChild || newChild == p->children.front()) return node;
         auto out = std::make_shared<FilterNode>(*p);
         out->children = { newChild };
@@ -779,9 +772,7 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
             child_req->erase(p->name);           
             child_req->insert(expr_refs.begin(), expr_refs.end());
         }
-        auto newChild = p->children.empty()
-            ? std::shared_ptr<LogicalNode>{}
-            : projectionPushdownRec(p->children[0], child_req);
+        auto newChild = p->children.empty() ? std::shared_ptr<LogicalNode>{} : projectionPushdownRec(p->children[0], child_req);
         if (!newChild || newChild == p->children.front()) return node;
         auto out = std::make_shared<WithColNode>(*p);
         out->children = { newChild };
@@ -790,12 +781,8 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
 
     if (auto p = std::dynamic_pointer_cast<SortNode>(node)) {
         auto child_req = required;
-        if (child_req) {
-            child_req->insert(p->columns.begin(), p->columns.end());
-        }
-        auto newChild = p->children.empty()
-            ? std::shared_ptr<LogicalNode>{}
-            : projectionPushdownRec(p->children[0], child_req);
+        if (child_req) { child_req->insert(p->columns.begin(), p->columns.end());}
+        auto newChild = p->children.empty() ? std::shared_ptr<LogicalNode>{} : projectionPushdownRec(p->children[0], child_req);
         if (!newChild || newChild == p->children.front()) return node;
         auto out = std::make_shared<SortNode>(*p);
         out->children = { newChild };
@@ -803,9 +790,7 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
     }
 
     if (auto p = std::dynamic_pointer_cast<LimitNode>(node)) {
-        auto newChild = p->children.empty()
-            ? std::shared_ptr<LogicalNode>{}
-            : projectionPushdownRec(p->children[0], required);
+        auto newChild = p->children.empty() ? std::shared_ptr<LogicalNode>{} : projectionPushdownRec(p->children[0], required);
         if (!newChild || newChild == p->children.front()) return node;
         auto out = std::make_shared<LimitNode>(*p);
         out->children = { newChild };
@@ -814,12 +799,8 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
 
     if (auto p = std::dynamic_pointer_cast<GroupByNode>(node)) {
         auto child_req = required;
-        if (child_req) {
-            child_req->insert(p->keys.begin(), p->keys.end());
-        }
-        auto newChild = p->children.empty()
-            ? std::shared_ptr<LogicalNode>{}
-            : projectionPushdownRec(p->children[0], child_req);
+        if (child_req) { child_req->insert(p->keys.begin(), p->keys.end()); }
+        auto newChild = p->children.empty() ? std::shared_ptr<LogicalNode>{} : projectionPushdownRec(p->children[0], child_req);
         if (!newChild || newChild == p->children.front()) return node;
         auto out = std::make_shared<GroupByNode>(*p);
         out->children = { newChild };
@@ -829,9 +810,7 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
     if (auto p = std::dynamic_pointer_cast<AggNode>(node)) {
         std::set<std::string> needs;
         for (const auto& [_, eb] : p->aggMap) collectColRefs(eb.expr(), needs);
-        auto newChild = p->children.empty()
-            ? std::shared_ptr<LogicalNode>{}
-            : projectionPushdownRec(p->children[0], needs);
+        auto newChild = p->children.empty() ? std::shared_ptr<LogicalNode>{} : projectionPushdownRec(p->children[0], needs);
         if (!newChild || newChild == p->children.front()) return node;
         auto out = std::make_shared<AggNode>(*p);
         out->children = { newChild };
@@ -855,13 +834,10 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
             rightReq->insert(onKeys.begin(), onKeys.end());
         }
 
-        auto newLeft  = p->children.empty()
-            ? std::shared_ptr<LogicalNode>{}
-            : projectionPushdownRec(p->children[0], leftReq);
+        auto newLeft  = p->children.empty() ? std::shared_ptr<LogicalNode>{} : projectionPushdownRec(p->children[0], leftReq);
         auto newRight = projectionPushdownRec(p->right, rightReq);
 
-        if ((p->children.empty() || newLeft == p->children.front()) &&
-            newRight == p->right) return node;
+        if ((p->children.empty() || newLeft == p->children.front()) && newRight == p->right) return node;
         auto out = std::make_shared<JoinNode>(*p);
         if (!p->children.empty()) out->children = { newLeft };
         out->right = newRight;
@@ -869,9 +845,7 @@ std::shared_ptr<LogicalNode> projectionPushdownRec(
     }
 
     if (auto p = std::dynamic_pointer_cast<SinkNode>(node)) {
-        auto newChild = p->children.empty()
-            ? std::shared_ptr<LogicalNode>{}
-            : projectionPushdownRec(p->children[0], required);
+        auto newChild = p->children.empty() ? std::shared_ptr<LogicalNode>{} : projectionPushdownRec(p->children[0], required);
         if (!newChild || newChild == p->children.front()) return node;
         auto out = std::make_shared<SinkNode>(*p);
         out->children = { newChild };
@@ -941,8 +915,7 @@ std::shared_ptr<LogicalNode> QueryOptimizer::projectionPushdown(
 
 std::shared_ptr<LogicalNode> QueryOptimizer::constantFolding(
     const std::shared_ptr<LogicalNode>& node) const {
-    NodeRewriter rewriter = [&](const std::shared_ptr<LogicalNode>& n)
-        -> std::shared_ptr<LogicalNode> {
+    NodeRewriter rewriter = [&](const std::shared_ptr<LogicalNode>& n) -> std::shared_ptr<LogicalNode> {
         auto kids = mapChildren(n, rewriter);
         return rewriteNodeExprs(kids, &foldExpr);
     };
@@ -951,8 +924,7 @@ std::shared_ptr<LogicalNode> QueryOptimizer::constantFolding(
 
 std::shared_ptr<LogicalNode> QueryOptimizer::expressionSimplification(
     const std::shared_ptr<LogicalNode>& node) const {
-    NodeRewriter rewriter = [&](const std::shared_ptr<LogicalNode>& n)
-        -> std::shared_ptr<LogicalNode> {
+    NodeRewriter rewriter = [&](const std::shared_ptr<LogicalNode>& n) -> std::shared_ptr<LogicalNode> {
         auto kids = mapChildren(n, rewriter);
         return rewriteNodeExprs(kids, &simplifyExpr);
     };

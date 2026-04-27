@@ -13,7 +13,10 @@
 #include "LogicalPlan.hpp"
 #include "QueryOptimizer.hpp"
 
-namespace dfl {
+
+
+namespace dfl
+{
 
 
 LazyDataFrame::LazyDataFrame() : plan_(nullptr) {}
@@ -28,17 +31,15 @@ namespace {
 
 template <typename NodeT>
 LazyDataFrame extend(std::shared_ptr<LogicalNode> parent,
-                     std::shared_ptr<NodeT> node) {
+std::shared_ptr<NodeT> node) {
     if (!parent) {
-        throw std::runtime_error(
-            "LazyDataFrame: operation applied to an empty plan");
+        throw std::runtime_error("LazyDataFrame: operation applied to an empty plan");
     }
     node->children = { parent };
     return LazyDataFrame(node);
 }
 
 } 
-
 
 LazyDataFrame LazyDataFrame::select(const std::vector<std::string>& columns) const {
     auto node = std::make_shared<SelectNode>();
@@ -63,8 +64,7 @@ LazyDataFrame LazyDataFrame::filter(const ExprBuilder& predicate) const {
     return extend(plan_, node);
 }
 
-LazyDataFrame LazyDataFrame::with_column(const std::string& name,
-                                         const ExprBuilder& expr) const {
+LazyDataFrame LazyDataFrame::with_column(const std::string& name, const ExprBuilder& expr) const {
     auto node  = std::make_shared<WithColNode>();
     node->name = name;
     node->expr = expr;
@@ -72,14 +72,14 @@ LazyDataFrame LazyDataFrame::with_column(const std::string& name,
 }
 
 LazyDataFrame LazyDataFrame::group_by(const std::vector<std::string>& keys) const {
-    auto node  = std::make_shared<GroupByNode>();
+    auto node = std::make_shared<GroupByNode>();
     node->keys = keys;
     return extend(plan_, node);
 }
 
 LazyDataFrame LazyDataFrame::aggregate(
     const std::map<std::string, ExprBuilder>& aggMap) const {
-    auto node    = std::make_shared<AggNode>();
+    auto node = std::make_shared<AggNode>();
     node->aggMap = aggMap;
     return extend(plan_, node);
 }
@@ -90,9 +90,7 @@ LazyDataFrame LazyDataFrame::aggregate(
 
     for (const auto& [col_name, fn_name_raw] : aggs) {
         std::string fn_name = fn_name_raw;
-        std::transform(
-            fn_name.begin(), fn_name.end(), fn_name.begin(),
-            [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        std::transform( fn_name.begin(), fn_name.end(), fn_name.begin(),[](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
 
         ExprBuilder expr;
         if (fn_name == "sum") expr = col(col_name).sum();
@@ -100,9 +98,7 @@ LazyDataFrame LazyDataFrame::aggregate(
         else if (fn_name == "count") expr = col(col_name).count();
         else if (fn_name == "min") expr = col(col_name).min();
         else if (fn_name == "max") expr = col(col_name).max();
-        else {
-            throw std::invalid_argument("aggregate: unsupported function '" + fn_name_raw + "'");
-        }
+        else { throw std::invalid_argument("aggregate: unsupported function '" + fn_name_raw + "'");}
 
         std::string out_name = col_name + "_" + fn_name;
         if (agg_map.find(out_name) != agg_map.end()) {
@@ -120,28 +116,25 @@ LazyDataFrame LazyDataFrame::aggregate(
     return aggregate(agg_map);
 }
 
-LazyDataFrame LazyDataFrame::join(const LazyDataFrame& other,
-                                  const std::vector<std::string>& on,
-                                  const std::string& how) const {
+LazyDataFrame LazyDataFrame::join(const LazyDataFrame& other, const std::vector<std::string>& on,const std::string& how) const {
     if (!other.plan_) throw std::runtime_error("join: right-hand plan is empty");
-    auto node   = std::make_shared<JoinNode>();
+    auto node = std::make_shared<JoinNode>();
     node->right = other.plan_;
-    node->on    = on;
-    node->how   = how;
+    node->on = on;
+    node->how = how;
     return extend(plan_, node);
 }
 
-LazyDataFrame LazyDataFrame::sort(const std::vector<std::string>& columns,
-                                  bool ascending) const {
-    auto node        = std::make_shared<SortNode>();
-    node->columns    = columns;
-    node->ascending  = ascending;
+LazyDataFrame LazyDataFrame::sort(const std::vector<std::string>& columns,bool ascending) const {
+    auto node = std::make_shared<SortNode>();
+    node->columns = columns;
+    node->ascending = ascending;
     return extend(plan_, node);
 }
 
 LazyDataFrame LazyDataFrame::head(int64_t n) const {
     auto node = std::make_shared<LimitNode>();
-    node->n   = n;
+    node->n = n;
     return extend(plan_, node);
 }
 
@@ -159,8 +152,7 @@ namespace {
 
 EagerDataFrame executePlan(const std::shared_ptr<LogicalNode>& node);
 
-const std::shared_ptr<LogicalNode>& requireChild(const LogicalNode& n,
-                                                 const std::string& ctx) {
+const std::shared_ptr<LogicalNode>& requireChild(const LogicalNode& n, const std::string& ctx) {
     if (n.children.empty() || !n.children[0]) {
         throw std::runtime_error(ctx + ": missing child plan");
     }
@@ -168,9 +160,7 @@ const std::shared_ptr<LogicalNode>& requireChild(const LogicalNode& n,
 }
 
 EagerDataFrame runScan(const ScanNode& s) {
-    if (s.path.empty()) {
-        throw std::runtime_error("Scan: empty path");
-    }
+    if (s.path.empty()) { throw std::runtime_error("Scan: empty path");}
     auto df = s.isParquet ? read_parquet(s.path) : read_csv(s.path);
 
     if (!s.projected_columns.empty()) {
@@ -251,7 +241,7 @@ EagerDataFrame executePlan(const std::shared_ptr<LogicalNode>& node) {
     if (auto p = std::dynamic_pointer_cast<SinkNode>(node)) {
         auto child_df = executePlan(requireChild(*p, "Sink"));
         if (p->isParquet) child_df.write_parquet(p->path);
-        else              child_df.write_csv(p->path);
+        else child_df.write_csv(p->path);
         return child_df;
     }
 
@@ -262,6 +252,8 @@ EagerDataFrame executePlan(const std::shared_ptr<LogicalNode>& node) {
 
 EagerDataFrame LazyDataFrame::collect() const {
     if (!plan_) return EagerDataFrame();
+    // QueryOptimizer is stateless — safe to construct on each call
+    // (avoids any thread-safety issues with shared optimizer state)
     QueryOptimizer opt;
     auto optimized = opt.optimize(plan_);
     return executePlan(optimized);
@@ -277,14 +269,12 @@ namespace {
 
 struct TempDotFile {
     std::string path;
-    bool        keep = false;
+    bool keep = false;
 
     explicit TempDotFile(std::string p) : path(std::move(p)) {}
-    ~TempDotFile() {
-        if (!keep && !path.empty()) std::remove(path.c_str());
-    }
+    ~TempDotFile() { if (!keep && !path.empty()) std::remove(path.c_str());}
 
-    TempDotFile(const TempDotFile&)            = delete;
+    TempDotFile(const TempDotFile&) = delete;
     TempDotFile& operator=(const TempDotFile&) = delete;
 };
 
@@ -295,9 +285,7 @@ void LazyDataFrame::explain(const std::string& pngPath) const {
     auto optimized = opt.optimize(plan_);
     const std::string dot = renderDotGraph(optimized);
 
-    const auto ts =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
+    const auto ts = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
     TempDotFile tmp("/tmp/plan_" + std::to_string(ts) + ".dot");
 
     {
@@ -315,8 +303,7 @@ void LazyDataFrame::explain(const std::string& pngPath) const {
     const int rc = std::system(cmd.c_str());
     if (rc != 0) {
         tmp.keep = true;
-        std::cerr << "Warning: Graphviz not installed or `dot` failed. "
-                     "DOT file written to " << tmp.path << "\n";
+        std::cerr << "Warning: Graphviz not installed or `dot` failed. ""DOT file written to " << tmp.path << "\n";
     }
 }
 

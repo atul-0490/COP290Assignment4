@@ -7,7 +7,10 @@
 #include <arrow/api.h>
 #include <arrow/type.h>
 
-namespace dfl {
+
+
+namespace dfl
+{
 
 enum class ColType {
     INT32,

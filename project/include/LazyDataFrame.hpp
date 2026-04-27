@@ -11,7 +11,10 @@
 #include "Expr.hpp"
 #include "LogicalPlan.hpp"
 
-namespace dfl {
+
+
+namespace dfl
+{
 
 class LazyDataFrame {
 public:
@@ -35,17 +38,16 @@ public:
     LazyDataFrame filter(const ExprBuilder& predicate) const;
 
     LazyDataFrame with_column(const std::string& name, const ExprBuilder& expr) const;
-
     LazyDataFrame group_by(const std::vector<std::string>& keys) const;
 
     LazyDataFrame aggregate(const std::map<std::string, ExprBuilder>& aggMap) const;
-
     LazyDataFrame aggregate( const std::vector<std::pair<std::string, std::string>>& aggs) const;
 
     LazyDataFrame join(const LazyDataFrame& other, const std::vector<std::string>& on, const std::string& how = "inner") const;
 
     LazyDataFrame sort(const std::vector<std::string>& columns, bool ascending = true) const;
 
+    
     LazyDataFrame head(int64_t n) const;
 
     void sink_csv(const std::string& path) const;

@@ -6,7 +6,10 @@
 
 #include "TypeUtils.hpp"
 
-namespace dfl {
+
+
+namespace dfl
+{
 class DataFrame {
 public:
     virtual ~DataFrame() = default;

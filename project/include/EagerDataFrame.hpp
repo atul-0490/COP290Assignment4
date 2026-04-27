@@ -12,7 +12,10 @@
 #include "DataFrame.hpp"
 #include "Expr.hpp"
 
-namespace dfl {
+
+
+namespace dfl
+{
 
 class EagerDataFrame : public DataFrame {
 public:
@@ -39,13 +42,10 @@ public:
     EagerDataFrame select(const std::vector<ExprBuilder>& exprs) const;
 
     EagerDataFrame select(std::initializer_list<const char*> columns) const;
-
     EagerDataFrame filter(const ExprBuilder& predicate) const;
 
     EagerDataFrame with_column(const std::string& name, const ExprBuilder& expr) const;
-
     EagerDataFrame group_by(const std::vector<std::string>& keys) const;
-
     EagerDataFrame aggregate(const std::map<std::string, ExprBuilder>& aggMap) const;
 
     EagerDataFrame aggregate(const std::vector<std::pair<std::string, std::string>>& aggs) const;
@@ -53,7 +53,6 @@ public:
     EagerDataFrame join(const EagerDataFrame& other, const std::vector<std::string>& on, const std::string& how = "inner") const;
 
     EagerDataFrame sort(const std::vector<std::string>& columns, bool ascending = true) const;
-
     EagerDataFrame head(int64_t n) const;
 
     void write_csv(const std::string& path) const;

@@ -6,23 +6,25 @@
 #include <arrow/api.h>
 #include <arrow/type.h>
 
-namespace dfl {
+
+
+namespace dfl
+{
 
 namespace {
 
 int numericRank(ColType t) {
     switch (t) {
-        case ColType::INT32:   return 1;
-        case ColType::INT64:   return 2;
+        case ColType::INT32:  return 1;
+        case ColType::INT64: return 2;
         case ColType::FLOAT32: return 3;
         case ColType::FLOAT64: return 4;
-        default:               return 0;
+        default: return 0;
     }
 }
 
 [[noreturn]] void throwIncompatible(ColType a, ColType b) {
-    throw std::invalid_argument(
-        "Incompatible types: " + colTypeToString(a) + " and " + colTypeToString(b));
+    throw std::invalid_argument( "Incompatible types: " + colTypeToString(a) + " and " + colTypeToString(b));
 }
 
 } 
@@ -82,8 +84,7 @@ ColType arrowTypeToColType(const std::shared_ptr<arrow::DataType>& t) {
         case arrow::Type::LARGE_STRING: return ColType::STRING;
         case arrow::Type::BOOL:    return ColType::BOOLEAN;
         default:
-            throw std::runtime_error(
-                "Unsupported Arrow type: " + t->ToString());
+            throw std::runtime_error( "Unsupported Arrow type: " + t->ToString());
     }
 }
 

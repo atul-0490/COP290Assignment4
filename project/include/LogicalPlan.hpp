@@ -8,7 +8,10 @@
 
 #include "Expr.hpp"
 
-namespace dfl {
+
+
+namespace dfl
+{
 
 
 struct LogicalNode {

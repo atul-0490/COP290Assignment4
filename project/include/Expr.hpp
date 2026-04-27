@@ -9,7 +9,10 @@
 
 #include "TypeUtils.hpp"
 
-namespace dfl {
+
+
+namespace dfl
+{
 
 struct Expr {
     virtual ~Expr() = default;
@@ -96,6 +99,8 @@ public:
 
     ExprBuilder abs() const;
 
+
+
     ExprBuilder is_null() const;
 
     ExprBuilder is_not_null() const;
@@ -106,6 +111,7 @@ public:
     ExprBuilder contains(const std::string& s) const;
 
     ExprBuilder starts_with(const std::string& s) const;
+
 
     ExprBuilder ends_with(const std::string& s) const;
 

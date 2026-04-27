@@ -1,6 +1,9 @@
 #include "Expr.hpp"
 
-namespace dfl {
+
+
+namespace dfl
+{
 
 
 std::shared_ptr<Expr> makeCol(const std::string& name) {
@@ -29,15 +32,13 @@ static ExprBuilder makeUnary(std::shared_ptr<Expr> child, UnaryExpr::Op op) {
     return ExprBuilder(n);
 }
 
-ExprBuilder ExprBuilder::abs()         const { return makeUnary(node_, UnaryExpr::Op::ABS); }
-ExprBuilder ExprBuilder::is_null()     const { return makeUnary(node_, UnaryExpr::Op::IS_NULL); }
+ExprBuilder ExprBuilder::abs() const { return makeUnary(node_, UnaryExpr::Op::ABS); }
+ExprBuilder ExprBuilder::is_null()  const { return makeUnary(node_, UnaryExpr::Op::IS_NULL); }
 ExprBuilder ExprBuilder::is_not_null() const { return makeUnary(node_, UnaryExpr::Op::IS_NOT_NULL); }
-ExprBuilder ExprBuilder::operator~()   const { return makeUnary(node_, UnaryExpr::Op::NOT); }
+ExprBuilder ExprBuilder::operator~() const { return makeUnary(node_, UnaryExpr::Op::NOT); }
 
 
-static ExprBuilder makeStr(std::shared_ptr<Expr> child,
-                           StringExpr::Func f,
-                           std::string arg = "") {
+static ExprBuilder makeStr(std::shared_ptr<Expr> child,StringExpr::Func f,std::string arg = "") {
     auto n   = std::make_shared<StringExpr>();
     n->child = std::move(child);
     n->func  = f;
@@ -45,10 +46,10 @@ static ExprBuilder makeStr(std::shared_ptr<Expr> child,
     return ExprBuilder(n);
 }
 
-ExprBuilder ExprBuilder::length() const           { return makeStr(node_, StringExpr::Func::LENGTH); }
-ExprBuilder ExprBuilder::contains(const std::string& s)     const { return makeStr(node_, StringExpr::Func::CONTAINS, s); }
+ExprBuilder ExprBuilder::length() const  { return makeStr(node_, StringExpr::Func::LENGTH); }
+ExprBuilder ExprBuilder::contains(const std::string& s) const { return makeStr(node_, StringExpr::Func::CONTAINS, s); }
 ExprBuilder ExprBuilder::starts_with(const std::string& s)  const { return makeStr(node_, StringExpr::Func::STARTS_WITH, s); }
-ExprBuilder ExprBuilder::ends_with(const std::string& s)    const { return makeStr(node_, StringExpr::Func::ENDS_WITH, s); }
+ExprBuilder ExprBuilder::ends_with(const std::string& s) const { return makeStr(node_, StringExpr::Func::ENDS_WITH, s); }
 ExprBuilder ExprBuilder::to_lower() const { return makeStr(node_, StringExpr::Func::TO_LOWER); }
 ExprBuilder ExprBuilder::to_upper() const { return makeStr(node_, StringExpr::Func::TO_UPPER); }
 
@@ -60,16 +61,14 @@ static ExprBuilder makeAgg(std::shared_ptr<Expr> child, AggExpr::Func f) {
     return ExprBuilder(n);
 }
 
-ExprBuilder ExprBuilder::sum()   const { return makeAgg(node_, AggExpr::Func::SUM); }
-ExprBuilder ExprBuilder::mean()  const { return makeAgg(node_, AggExpr::Func::MEAN); }
+ExprBuilder ExprBuilder::sum() const { return makeAgg(node_, AggExpr::Func::SUM); }
+ExprBuilder ExprBuilder::mean() const { return makeAgg(node_, AggExpr::Func::MEAN); }
 ExprBuilder ExprBuilder::count() const { return makeAgg(node_, AggExpr::Func::COUNT); }
-ExprBuilder ExprBuilder::min()   const { return makeAgg(node_, AggExpr::Func::MIN); }
-ExprBuilder ExprBuilder::max()   const { return makeAgg(node_, AggExpr::Func::MAX); }
+ExprBuilder ExprBuilder::min() const { return makeAgg(node_, AggExpr::Func::MIN); }
+ExprBuilder ExprBuilder::max() const { return makeAgg(node_, AggExpr::Func::MAX); }
 
 
-static ExprBuilder makeBin(std::shared_ptr<Expr> l,
-                           std::shared_ptr<Expr> r,
-                           BinaryExpr::Op op) {
+static ExprBuilder makeBin(std::shared_ptr<Expr> l,std::shared_ptr<Expr> r,BinaryExpr::Op op) {
     auto n   = std::make_shared<BinaryExpr>();
     n->left  = std::move(l);
     n->right = std::move(r);

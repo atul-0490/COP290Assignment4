@@ -21,9 +21,12 @@
 
 #ifdef DFL_HAVE_PARQUET
 #include <parquet/arrow/writer.h>
+
 #endif
 
-namespace dfl {
+
+namespace dfl
+{
 
 
 namespace {
@@ -31,36 +34,25 @@ namespace {
 void ensureComputeInitialized() {
     static const bool init_ok = []() {
         auto s = arrow::compute::Initialize();
-        if (!s.ok()) {
-            throw std::runtime_error(
-                "arrow::compute::Initialize failed: " + s.ToString());
-        }
+        if (!s.ok()) { throw std::runtime_error("arrow::compute::Initialize failed: " + s.ToString());}
         return true;
     }();
     (void)init_ok;
 }
 
 void ensureOk(const arrow::Status& s, const std::string& context) {
-    if (!s.ok()) {
-        throw std::runtime_error(context + ": " + s.ToString());
-    }
+    if (!s.ok()) {throw std::runtime_error(context + ": " + s.ToString());}
 }
 
 template <typename T>
 T unwrap(arrow::Result<T>&& res, const std::string& context) {
-    if (!res.ok()) {
-        throw std::runtime_error(context + ": " + res.status().ToString());
-    }
+    if (!res.ok()) {throw std::runtime_error(context + ": " + res.status().ToString());}
     return std::move(res).ValueOrDie();
 }
 
-arrow::Datum call(const std::string& fn,
-                  const std::vector<arrow::Datum>& args,
-                  const arrow::compute::FunctionOptions* opts = nullptr) {
+arrow::Datum call(const std::string& fn,const std::vector<arrow::Datum>& args, const arrow::compute::FunctionOptions* opts = nullptr) {
     auto res = arrow::compute::CallFunction(fn, args, opts);
-    if (!res.ok()) {
-        throw std::runtime_error("compute::" + fn + ": " + res.status().ToString());
-    }
+    if (!res.ok()) {throw std::runtime_error("compute::" + fn + ": " + res.status().ToString());}
     return res.ValueOrDie();
 }
 
@@ -72,8 +64,7 @@ std::shared_ptr<arrow::ChunkedArray> datumToChunkedArray(
         case arrow::Datum::ARRAY:
             return std::make_shared<arrow::ChunkedArray>(d.make_array());
         case arrow::Datum::SCALAR: {
-            auto arr = unwrap(arrow::MakeArrayFromScalar(*d.scalar(), nrows),
-                              "MakeArrayFromScalar");
+            auto arr = unwrap(arrow::MakeArrayFromScalar(*d.scalar(), nrows),"MakeArrayFromScalar");
             return std::make_shared<arrow::ChunkedArray>(arr);
         }
         default:
@@ -85,28 +76,18 @@ void validateBinaryOp(ColType lt, ColType rt, BinaryExpr::Op op) {
     using Op = BinaryExpr::Op;
     switch (op) {
         case Op::ADD: case Op::SUB: case Op::MUL: case Op::DIV: case Op::MOD:
-            if (!isNumeric(lt) || !isNumeric(rt)) {
-                throw std::invalid_argument(
-                    "Arithmetic requires numeric operands, got " +
-                    colTypeToString(lt) + " and " + colTypeToString(rt));
-            }
+            if (!isNumeric(lt) || !isNumeric(rt)) {throw std::invalid_argument( "Arithmetic requires numeric operands, got " +colTypeToString(lt) + " and " + colTypeToString(rt));}
             (void)promoteTypes(lt, rt);
             break;
         case Op::EQ: case Op::NEQ:
-            if ((isNumeric(lt) && isNumeric(rt)) ||
-                (lt == rt)) return;
-            throw std::invalid_argument(
-                "Cannot compare " + colTypeToString(lt) + " with " + colTypeToString(rt));
+            if ((isNumeric(lt) && isNumeric(rt)) ||(lt == rt)) return;
+            throw std::invalid_argument("Cannot compare " + colTypeToString(lt) + " with " + colTypeToString(rt));
         case Op::LT: case Op::LE: case Op::GT: case Op::GE:
-            if ((isNumeric(lt) && isNumeric(rt)) ||
-                (lt == rt && lt == ColType::STRING)) return;
-            throw std::invalid_argument(
-                "Cannot order " + colTypeToString(lt) + " with " + colTypeToString(rt));
+            if ((isNumeric(lt) && isNumeric(rt)) || (lt == rt && lt == ColType::STRING)) return;
+            throw std::invalid_argument("Cannot order " + colTypeToString(lt) + " with " + colTypeToString(rt));
         case Op::AND: case Op::OR:
             if (lt != ColType::BOOLEAN || rt != ColType::BOOLEAN) {
-                throw std::invalid_argument(
-                    "Boolean op requires boolean operands, got " +
-                    colTypeToString(lt) + " and " + colTypeToString(rt));
+                throw std::invalid_argument("Boolean op requires boolean operands, got " +colTypeToString(lt) + " and " + colTypeToString(rt));
             }
             break;
     }
@@ -123,6 +104,7 @@ std::shared_ptr<arrow::ChunkedArray> evalExprOn(
 
 std::shared_ptr<arrow::ChunkedArray> evalColExpr(
     const std::shared_ptr<arrow::Table>& table, const ColExpr& e) {
+    
     auto c = table->GetColumnByName(e.name);
     if (!c) throw std::runtime_error("column not found: " + e.name);
     return c;
@@ -130,11 +112,9 @@ std::shared_ptr<arrow::ChunkedArray> evalColExpr(
 
 std::shared_ptr<arrow::ChunkedArray> evalLitExpr(
     const std::shared_ptr<arrow::Table>& table, const LitExpr& e) {
-    if (!e.value.is_scalar()) {
-        throw std::runtime_error("LitExpr without scalar value");
-    }
-    auto arr = unwrap(arrow::MakeArrayFromScalar(*e.value.scalar(), table->num_rows()),
-                      "LitExpr: MakeArrayFromScalar");
+    if (!e.value.is_scalar()) {throw std::runtime_error("LitExpr without scalar value");}
+    
+    auto arr = unwrap(arrow::MakeArrayFromScalar(*e.value.scalar(), table->num_rows()),"LitExpr: MakeArrayFromScalar");
     return std::make_shared<arrow::ChunkedArray>(arr);
 }
 
@@ -149,14 +129,14 @@ std::shared_ptr<arrow::ChunkedArray> evalBinaryExpr(
         std::shared_ptr<arrow::Array> right_arr;
 
         if (L->num_chunks() == 0) {
-            left_arr = unwrap(arrow::MakeArrayOfNull(L->type(), table->num_rows()),
-                              "mod: empty left fill");
+            left_arr = unwrap(arrow::MakeArrayOfNull(L->type(), table->num_rows()),"mod: empty left fill");
         } else {
             left_arr = unwrap(arrow::Concatenate(L->chunks()), "mod: concat left chunks");
+        
         }
         if (R->num_chunks() == 0) {
-            right_arr = unwrap(arrow::MakeArrayOfNull(R->type(), table->num_rows()),
-                               "mod: empty right fill");
+            right_arr = unwrap(arrow::MakeArrayOfNull(R->type(), table->num_rows()),"mod: empty right fill");
+        
         } else {
             right_arr = unwrap(arrow::Concatenate(R->chunks()), "mod: concat right chunks");
         }
@@ -170,6 +150,7 @@ std::shared_ptr<arrow::ChunkedArray> evalBinaryExpr(
             auto rs = right_arr->GetScalar(i).ValueOrDie();
 
             if (!ls->is_valid || !rs->is_valid) {
+                
                 ensureOk(out_builder->AppendNull(), "mod: AppendNull");
                 continue;
             }
@@ -199,19 +180,19 @@ std::shared_ptr<arrow::ChunkedArray> evalBinaryExpr(
 
     const char* fn = nullptr;
     switch (e.op) {
-        case BinaryExpr::Op::ADD: fn = "add";           break;
-        case BinaryExpr::Op::SUB: fn = "subtract";      break;
-        case BinaryExpr::Op::MUL: fn = "multiply";      break;
-        case BinaryExpr::Op::DIV: fn = "divide";        break;
-        case BinaryExpr::Op::EQ:  fn = "equal";         break;
-        case BinaryExpr::Op::NEQ: fn = "not_equal";     break;
-        case BinaryExpr::Op::LT:  fn = "less";          break;
-        case BinaryExpr::Op::LE:  fn = "less_equal";    break;
-        case BinaryExpr::Op::GT:  fn = "greater";       break;
+        case BinaryExpr::Op::ADD: fn = "add";  break;
+        case BinaryExpr::Op::SUB: fn = "subtract"; break;
+        case BinaryExpr::Op::MUL: fn = "multiply";  break;
+        case BinaryExpr::Op::DIV: fn = "divide"; break;
+        case BinaryExpr::Op::EQ:  fn = "equal"; break;
+        case BinaryExpr::Op::NEQ: fn = "not_equal"; break;
+        case BinaryExpr::Op::LT:  fn = "less";break;
+        case BinaryExpr::Op::LE:  fn = "less_equal";break;
+        case BinaryExpr::Op::GT:  fn = "greater"; break;
         case BinaryExpr::Op::GE:  fn = "greater_equal"; break;
-        case BinaryExpr::Op::AND: fn = "and_kleene";    break;
-        case BinaryExpr::Op::OR:  fn = "or_kleene";     break;
-        case BinaryExpr::Op::MOD: fn = nullptr;           break;
+        case BinaryExpr::Op::AND: fn = "and_kleene"; break;
+        case BinaryExpr::Op::OR:  fn = "or_kleene";  break;
+        case BinaryExpr::Op::MOD: fn = nullptr; break;
     }
 
     auto out = call(fn, { arrow::Datum(L), arrow::Datum(R) });
@@ -225,14 +206,10 @@ std::shared_ptr<arrow::ChunkedArray> evalUnaryExpr(
     switch (e.op) {
         case UnaryExpr::Op::NEG:         fn = "negate"; break;
         case UnaryExpr::Op::NOT:
-            if (chunkedType(C) != ColType::BOOLEAN) {
-                throw std::invalid_argument("NOT requires a boolean operand");
-            }
+            if (chunkedType(C) != ColType::BOOLEAN) { throw std::invalid_argument("NOT requires a boolean operand");}
             fn = "invert"; break;
         case UnaryExpr::Op::ABS:
-            if (!isNumeric(chunkedType(C))) {
-                throw std::invalid_argument("abs() requires a numeric operand");
-            }
+            if (!isNumeric(chunkedType(C))) {throw std::invalid_argument("abs() requires a numeric operand");}
             fn = "abs"; break;
         case UnaryExpr::Op::IS_NULL:     fn = "is_null";  break;
         case UnaryExpr::Op::IS_NOT_NULL: fn = "is_valid"; break;
@@ -244,8 +221,7 @@ std::shared_ptr<arrow::ChunkedArray> evalUnaryExpr(
 std::shared_ptr<arrow::ChunkedArray> evalStringExpr(
     const std::shared_ptr<arrow::Table>& table, const StringExpr& e) {
     auto C = evalExprOn(table, e.child);
-    if (chunkedType(C) != ColType::STRING) {
-        throw std::invalid_argument("string function requires a string operand");
+    if (chunkedType(C) != ColType::STRING) {throw std::invalid_argument("string function requires a string operand");
     }
 
     using F = StringExpr::Func;
@@ -287,29 +263,24 @@ std::shared_ptr<arrow::ChunkedArray> evalAggExpr(
 
     const char* fn = nullptr;
     switch (e.func) {
-        case AggExpr::Func::SUM:   fn = "sum";   break;
-        case AggExpr::Func::MEAN:  fn = "mean";  break;
+        case AggExpr::Func::SUM:   fn = "sum"; break;
+        case AggExpr::Func::MEAN:  fn = "mean"; break;
         case AggExpr::Func::COUNT: fn = "count"; break;
-        case AggExpr::Func::MIN:   fn = "min";   break;
-        case AggExpr::Func::MAX:   fn = "max";   break;
+        case AggExpr::Func::MIN:   fn = "min";break;
+        case AggExpr::Func::MAX:   fn = "max"; break;
     }
 
     std::unique_ptr<arrow::compute::FunctionOptions> opts;
     if (e.func == AggExpr::Func::COUNT) {
         opts = std::make_unique<arrow::compute::CountOptions>();
-    } else if (e.func == AggExpr::Func::MIN || e.func == AggExpr::Func::MAX ||
-               e.func == AggExpr::Func::SUM || e.func == AggExpr::Func::MEAN) {
+    } else if (e.func == AggExpr::Func::MIN || e.func == AggExpr::Func::MAX || e.func == AggExpr::Func::SUM || e.func == AggExpr::Func::MEAN) {
         opts = std::make_unique<arrow::compute::ScalarAggregateOptions>();
     }
 
     auto res = arrow::compute::CallFunction(fn, { arrow::Datum(C) }, opts.get());
-    if (!res.ok()) {
-        throw std::runtime_error(std::string("aggregate ") + fn + ": " +
-                                 res.status().ToString());
-    }
+    if (!res.ok()) {throw std::runtime_error(std::string("aggregate ") + fn + ": " +res.status().ToString());}
     auto scalar = res.ValueOrDie().scalar();
-    auto arr    = unwrap(arrow::MakeArrayFromScalar(*scalar, 1),
-                         "agg: MakeArrayFromScalar");
+    auto arr = unwrap(arrow::MakeArrayFromScalar(*scalar, 1),"agg: MakeArrayFromScalar");
     return std::make_shared<arrow::ChunkedArray>(arr);
 }
 
@@ -319,13 +290,13 @@ std::shared_ptr<arrow::ChunkedArray> evalExprOn(
     if (!expr)  throw std::runtime_error("evalExpr: null expression");
     if (!table) throw std::runtime_error("evalExpr: null table");
 
-    if (auto c = std::dynamic_pointer_cast<ColExpr>(expr))    return evalColExpr(table, *c);
-    if (auto l = std::dynamic_pointer_cast<LitExpr>(expr))    return evalLitExpr(table, *l);
+    if (auto c = std::dynamic_pointer_cast<ColExpr>(expr)) return evalColExpr(table, *c);
+    if (auto l = std::dynamic_pointer_cast<LitExpr>(expr))  return evalLitExpr(table, *l);
     if (auto a = std::dynamic_pointer_cast<AliasExpr>(expr))  return evalExprOn(table, a->child);
     if (auto b = std::dynamic_pointer_cast<BinaryExpr>(expr)) return evalBinaryExpr(table, *b);
-    if (auto u = std::dynamic_pointer_cast<UnaryExpr>(expr))  return evalUnaryExpr(table, *u);
+    if (auto u = std::dynamic_pointer_cast<UnaryExpr>(expr)) return evalUnaryExpr(table, *u);
     if (auto s = std::dynamic_pointer_cast<StringExpr>(expr)) return evalStringExpr(table, *s);
-    if (auto g = std::dynamic_pointer_cast<AggExpr>(expr))    return evalAggExpr(table, *g);
+    if (auto g = std::dynamic_pointer_cast<AggExpr>(expr)) return evalAggExpr(table, *g);
 
     throw std::runtime_error("evalExpr: unknown expression node");
 }
@@ -416,14 +387,13 @@ void EagerDataFrame::print(int64_t maxRows) const {
         for (int c = 0; c < ncols; ++c) {
             auto scalar_res = table_->column(c)->GetScalar(r);
             std::string s;
-            if (!scalar_res.ok()) {
-                s = "?";
-            } else {
+            if (!scalar_res.ok()) { s = "?"; } 
+            else {
                 auto sc = scalar_res.ValueOrDie();
                 s = (sc && sc->is_valid) ? sc->ToString() : "null";
             }
             cells[r][c] = s;
-            widths[c]   = std::max(widths[c], s.size());
+            widths[c] = std::max(widths[c], s.size());
         }
     }
 
@@ -446,9 +416,7 @@ void EagerDataFrame::print(int64_t maxRows) const {
 
     for (int64_t r = 0; r < shown; ++r) printRow(cells[r]);
 
-    if (nrows > shown) {
-        std::cout << "... (" << (nrows - shown) << " more rows)\n";
-    }
+    if (nrows > shown) {std::cout << "... (" << (nrows - shown) << " more rows)\n";}
 }
 
 
@@ -500,8 +468,7 @@ EagerDataFrame EagerDataFrame::filter(const ExprBuilder& predicate) const {
 }
 
 
-EagerDataFrame EagerDataFrame::with_column(const std::string& name,
-                                           const ExprBuilder& expr) const {
+EagerDataFrame EagerDataFrame::with_column(const std::string& name, const ExprBuilder& expr) const {
     if (!table_) throw std::runtime_error("with_column: no table");
 
     auto col   = evalExpr(expr.expr());
@@ -509,8 +476,7 @@ EagerDataFrame EagerDataFrame::with_column(const std::string& name,
 
     const int idx = table_->schema()->GetFieldIndex(name);
     if (idx < 0) {
-        auto out = unwrap(table_->AddColumn(table_->num_columns(), field, col),
-                          "with_column: add");
+        auto out = unwrap(table_->AddColumn(table_->num_columns(), field, col),"with_column: add");
         return EagerDataFrame(out);
     } else {
         auto out = unwrap(table_->SetColumn(idx, field, col), "with_column: set");
@@ -528,8 +494,7 @@ EagerDataFrame EagerDataFrame::group_by(const std::vector<std::string>& keys) co
 
 namespace {
 
-bool keysDiffer(const std::vector<std::shared_ptr<arrow::Array>>& keys,
-                int64_t i, int64_t j) {
+bool keysDiffer(const std::vector<std::shared_ptr<arrow::Array>>& keys, int64_t i, int64_t j) {
     for (const auto& k : keys) {
         auto si = k->GetScalar(i).ValueOrDie();
         auto sj = k->GetScalar(j).ValueOrDie();
@@ -546,8 +511,7 @@ std::vector<std::shared_ptr<arrow::Array>> combinedKeyArrays(
     for (const auto& k : keys) {
         auto c = table->GetColumnByName(k);
         if (!c) throw std::runtime_error("group_by: unknown column '" + k + "'");
-        auto combined = unwrap(arrow::Concatenate(c->chunks()),
-                               "group_by: concatenate key '" + k + "'");
+        auto combined = unwrap(arrow::Concatenate(c->chunks()),"group_by: concatenate key '" + k + "'");
         out.push_back(combined);
     }
     return out;
@@ -618,13 +582,11 @@ EagerDataFrame EagerDataFrame::aggregate(
     auto scalarsToChunked = [](const std::vector<std::shared_ptr<arrow::Scalar>>& v)
         -> std::shared_ptr<arrow::ChunkedArray> {
         if (v.empty()) {
-            return std::make_shared<arrow::ChunkedArray>(
-                std::vector<std::shared_ptr<arrow::Array>>{}, arrow::null());
+            return std::make_shared<arrow::ChunkedArray>(std::vector<std::shared_ptr<arrow::Array>>{}, arrow::null());
         }
         auto ty      = v.front()->type;
         auto builder = unwrap(arrow::MakeBuilder(ty), "MakeBuilder");
-        ensureOk(builder->Reserve(static_cast<int64_t>(v.size())),
-                 "Reserve agg builder");
+        ensureOk(builder->Reserve(static_cast<int64_t>(v.size())), "Reserve agg builder");
         for (const auto& s : v) ensureOk(builder->AppendScalar(*s), "AppendScalar");
         std::shared_ptr<arrow::Array> arr;
         ensureOk(builder->Finish(&arr), "Finish agg builder");
@@ -649,9 +611,7 @@ EagerDataFrame EagerDataFrame::aggregate(
 
     for (const auto& [col_name, fn_name_raw] : aggs) {
         std::string fn_name = fn_name_raw;
-        std::transform(
-            fn_name.begin(), fn_name.end(), fn_name.begin(),
-            [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        std::transform(fn_name.begin(), fn_name.end(), fn_name.begin(),[](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
 
         ExprBuilder expr;
         if (fn_name == "sum") expr = col(col_name).sum();
@@ -659,17 +619,14 @@ EagerDataFrame EagerDataFrame::aggregate(
         else if (fn_name == "count") expr = col(col_name).count();
         else if (fn_name == "min") expr = col(col_name).min();
         else if (fn_name == "max") expr = col(col_name).max();
-        else {
-            throw std::invalid_argument("aggregate: unsupported function '" + fn_name_raw + "'");
-        }
+        else {throw std::invalid_argument("aggregate: unsupported function '" + fn_name_raw + "'");}
 
         std::string out_name = col_name + "_" + fn_name;
         if (agg_map.find(out_name) != agg_map.end()) {
             int suffix = 2;
             std::string candidate;
-            do {
-                candidate = out_name + "_" + std::to_string(suffix++);
-            } while (agg_map.find(candidate) != agg_map.end());
+            do {candidate = out_name + "_" + std::to_string(suffix++);} 
+            while (agg_map.find(candidate) != agg_map.end());
             out_name = candidate;
         }
 
@@ -680,15 +637,13 @@ EagerDataFrame EagerDataFrame::aggregate(
 }
 
 
-EagerDataFrame EagerDataFrame::sort(const std::vector<std::string>& columns,
-                                    bool ascending) const {
+EagerDataFrame EagerDataFrame::sort(const std::vector<std::string>& columns,bool ascending) const {
     if (!table_) return EagerDataFrame();
 
     std::vector<arrow::compute::SortKey> keys;
     keys.reserve(columns.size());
     for (const auto& c : columns) {
-        keys.emplace_back(c, ascending ? arrow::compute::SortOrder::Ascending
-                                       : arrow::compute::SortOrder::Descending);
+        keys.emplace_back(c, ascending ? arrow::compute::SortOrder::Ascending: arrow::compute::SortOrder::Descending);
     }
     arrow::compute::SortOptions opts(keys);
 
@@ -712,8 +667,7 @@ struct HashRow {
     bool        has_null = false;
 };
 
-HashRow rowKey(const std::vector<std::shared_ptr<arrow::Array>>& keys,
-               int64_t row) {
+HashRow rowKey(const std::vector<std::shared_ptr<arrow::Array>>& keys,int64_t row) {
     HashRow r;
     std::ostringstream oss;
     for (const auto& k : keys) {
@@ -728,9 +682,7 @@ HashRow rowKey(const std::vector<std::shared_ptr<arrow::Array>>& keys,
     return r;
 }
 
-void appendRow(const std::shared_ptr<arrow::Table>& src,
-               int64_t row,
-               std::vector<std::unique_ptr<arrow::ArrayBuilder>>& builders) {
+void appendRow(const std::shared_ptr<arrow::Table>& src, int64_t row,std::vector<std::unique_ptr<arrow::ArrayBuilder>>& builders) {
     for (int c = 0; c < src->num_columns(); ++c) {
         auto col = src->column(c);
         auto sc  = col->GetScalar(row).ValueOrDie();
@@ -765,9 +717,7 @@ std::vector<std::shared_ptr<arrow::Field>> excludeKeys(
 
 } 
 
-EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
-                                    const std::vector<std::string>& on,
-                                    const std::string& how) const {
+EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,const std::vector<std::string>& on,const std::string& how) const {
     if (!table_ || !other.table_) {
         throw std::runtime_error("join: null table");
     }
@@ -776,25 +726,19 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
         throw std::invalid_argument("join: unsupported join type '" + how + "'");
     }
 
-    auto concatChunks = [](const std::shared_ptr<arrow::Table>& t,
-                           const std::vector<std::string>& names) {
+    auto concatChunks = [](const std::shared_ptr<arrow::Table>& t,const std::vector<std::string>& names) {
         std::vector<std::shared_ptr<arrow::Array>> out;
         out.reserve(names.size());
         for (const auto& n : names) {
             auto c = t->GetColumnByName(n);
             if (!c) throw std::runtime_error("join: missing key '" + n + "'");
-            if (c->num_chunks() == 0) {
-                out.push_back(unwrap(arrow::MakeArrayOfNull(c->type(), t->num_rows()),
-                                     "join: empty key fill '" + n + "'"));
-            } else {
-                out.push_back(unwrap(arrow::Concatenate(c->chunks()),
-                                     "join: concat key '" + n + "'"));
-            }
+            if (c->num_chunks() == 0) {out.push_back(unwrap(arrow::MakeArrayOfNull(c->type(), t->num_rows()),"join: empty key fill '" + n + "'"));} 
+            else { out.push_back(unwrap(arrow::Concatenate(c->chunks()),"join: concat key '" + n + "'"));}
         }
         return out;
     };
 
-    auto left_keys  = concatChunks(table_,        on);
+    auto left_keys = concatChunks(table_,        on);
     auto right_keys = concatChunks(other.table_,  on);
 
     std::unordered_map<std::string, std::vector<int64_t>> rhs_index;
@@ -816,8 +760,7 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
     std::vector<std::unique_ptr<arrow::ArrayBuilder>> right_extra_builders;
     right_extra_builders.reserve(right_extra_fields.size());
     for (const auto& f : right_extra_fields) {
-        right_extra_builders.push_back(
-            unwrap(arrow::MakeBuilder(f->type()), "MakeBuilder"));
+        right_extra_builders.push_back(unwrap(arrow::MakeBuilder(f->type()), "MakeBuilder"));
     }
 
     std::vector<uint8_t> right_matched(other.table_->num_rows(), 0);
@@ -828,8 +771,7 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
             const auto& name = other.table_->schema()->field(c)->name();
             if (keySet.count(name)) continue;
             auto sc = other.table_->column(c)->GetScalar(r).ValueOrDie();
-            ensureOk(right_extra_builders[bi++]->AppendScalar(*sc),
-                     "join: right AppendScalar");
+            ensureOk(right_extra_builders[bi++]->AppendScalar(*sc),"join: right AppendScalar");
         }
     };
     auto appendRightExtraNulls = [&]() {
@@ -868,13 +810,10 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
             for (int c = 0; c < table_->num_columns(); ++c) {
                 const auto& name = table_->schema()->field(c)->name();
                 if (keySet.count(name)) {
-                    auto sc = other.table_->GetColumnByName(name)
-                                  ->GetScalar(r).ValueOrDie();
-                    ensureOk(left_builders[c]->AppendScalar(*sc),
-                             "join: right-only AppendScalar");
+                    auto sc = other.table_->GetColumnByName(name)->GetScalar(r).ValueOrDie();
+                    ensureOk(left_builders[c]->AppendScalar(*sc),"join: right-only AppendScalar");
                 } else {
-                    ensureOk(left_builders[c]->AppendNull(),
-                             "join: right-only AppendNull");
+                    ensureOk(left_builders[c]->AppendNull(),"join: right-only AppendNull");
                 }
             }
             appendRightExtras(r);
@@ -901,11 +840,9 @@ EagerDataFrame EagerDataFrame::join(const EagerDataFrame& other,
 void EagerDataFrame::write_csv(const std::string& path) const {
     if (!table_) throw std::runtime_error("write_csv: no table");
 
-    auto outfile = unwrap(arrow::io::FileOutputStream::Open(path),
-                          "write_csv: open '" + path + "'");
-    auto opts    = arrow::csv::WriteOptions::Defaults();
-    ensureOk(arrow::csv::WriteCSV(*table_, opts, outfile.get()),
-             "write_csv: WriteCSV");
+    auto outfile = unwrap(arrow::io::FileOutputStream::Open(path),"write_csv: open '" + path + "'");
+    auto opts = arrow::csv::WriteOptions::Defaults();
+    ensureOk(arrow::csv::WriteCSV(*table_, opts, outfile.get()),"write_csv: WriteCSV");
     ensureOk(outfile->Close(), "write_csv: close");
 }
 
@@ -913,16 +850,12 @@ void EagerDataFrame::write_parquet(const std::string& path) const {
 #ifdef DFL_HAVE_PARQUET
     if (!table_) throw std::runtime_error("write_parquet: no table");
 
-    auto outfile = unwrap(arrow::io::FileOutputStream::Open(path),
-                          "write_parquet: open '" + path + "'");
-    ensureOk(parquet::arrow::WriteTable(*table_, arrow::default_memory_pool(),
-                                        outfile, 64 * 1024),
-             "write_parquet: WriteTable");
+    auto outfile = unwrap(arrow::io::FileOutputStream::Open(path),"write_parquet: open '" + path + "'");
+    ensureOk(parquet::arrow::WriteTable(*table_, arrow::default_memory_pool(),outfile, 64 * 1024),"write_parquet: WriteTable");
     ensureOk(outfile->Close(), "write_parquet: close");
 #else
     (void)path;
-    throw std::runtime_error(
-        "write_parquet: DataFrameLib was built without Parquet support");
+    throw std::runtime_error("write_parquet: DataFrameLib was built without Parquet support");
 #endif
 }
 

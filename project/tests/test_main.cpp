@@ -23,6 +23,7 @@
 
 #include <chrono>
 
+
 using namespace dfl;
 
 
@@ -787,6 +788,23 @@ void test31_type_error_message() {
     std::cout << "OK\n";
 }
 
+void test32_null_group_key() {
+    std::cout << "test32_null_group_key .. ";
+    arrow::StringBuilder sb;
+    [[maybe_unused]] auto st = sb.Append("eng");
+    st = sb.AppendNull();
+    st = sb.Append("eng");
+    std::shared_ptr<arrow::Array> dept_arr;
+    st = sb.Finish(&dept_arr);
+
+    auto salary = f64({100.0, 50.0, 120.0});
+    auto df = makeFrame({{"dept", dept_arr}, {"salary", salary}});
+
+    auto out = df.group_by({"dept"}).aggregate({{"total", col("dept").count()}});
+    assert(out.numRows() == 1);
+    std::cout << "OK\n";
+}
+
 } 
 
 int main() {
@@ -822,10 +840,11 @@ int main() {
         test29_optimizer_idempotency();
         test30_head_out_of_range();
         test31_type_error_message();
+        test32_null_group_key();
     } catch (const std::exception& e) {
         std::cerr << "FAILED: " << e.what() << "\n";
         return 1;
     }
-    std::cout << "ALL 31 TESTS PASSED\n";
+    std::cout << "ALL 32 TESTS PASSED\n";
     return 0;
 }

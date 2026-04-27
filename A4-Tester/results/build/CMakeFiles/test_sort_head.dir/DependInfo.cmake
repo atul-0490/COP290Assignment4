@@ -8,7 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/atulk/asm/COP290/COP290Assignment4/A4-Tester/test_programs/test_sort_head.cpp" "CMakeFiles/test_sort_head.dir/test_sort_head.cpp.o" "gcc" "CMakeFiles/test_sort_head.dir/test_sort_head.cpp.o.d"
+  "/Users/abowtiekindofguy/Teaching/COP290/A4/tester/test_programs/test_sort_head.cpp" "CMakeFiles/test_sort_head.dir/test_sort_head.cpp.o" "gcc" "CMakeFiles/test_sort_head.dir/test_sort_head.cpp.o.d"
   )
 
 # Targets to which this target links which contain Fortran sources.
